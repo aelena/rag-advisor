@@ -1,0 +1,18 @@
+name: customer-support
+description: "Customer support chatbot — fast responses, multi-turn conversations"
+answers:
+  content_type_override: prose
+  use_case: question_answering
+  environment: cloud
+  latency_budget: "<500ms"
+  hardware: gpu_available
+  ram_gb: 16
+  vram_gb: 8
+  budget: paid_api
+  privacy: moderate
+  query_type: multi_turn
+  query_complexity: simple_factual
+  expected_answer_type: synthesized
+  update_frequency: weekly
+  embedding_provider: openai
+  llm_provider: gpt-4

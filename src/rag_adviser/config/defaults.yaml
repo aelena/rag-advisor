@@ -1,0 +1,323 @@
+# ragadvisor default configuration
+# These values are used as fallbacks when the HuggingFace API is unavailable
+# or when running in offline/air-gapped mode.
+
+analysis:
+  max_sample_docs: 50
+  max_chars_per_doc: 5000
+  min_language_confidence: 0.1
+
+chunking:
+  min_chunk_size: 100
+  max_chunk_size: 4000
+  default_overlap_ratio: 0.1
+
+cjk_languages:
+  - zh
+  - ja
+  - ko
+  - zh-cn
+  - zh-tw
+
+cjk_chunk_size_multiplier: 0.7
+
+trusted_orgs:
+  - BAAI
+  - intfloat
+  - sentence-transformers
+  - thenlper
+  - mixedbread-ai
+  - Alibaba-NLP
+  - nomic-ai
+  - jinaai
+
+# Curated open-weight models for offline operation.
+#
+# quality_score: approximate MTEB *retrieval* average (nDCG@10, English
+# subset, 0-100) taken from public leaderboards. Treat as a coarse ranking
+# signal, not a precise benchmark result; re-check the leaderboard for
+# production decisions.
+# estimated_size_gb: fp32 checkpoint size on disk. fp16 halves it.
+fallback_models:
+  - model_id: sentence-transformers/all-MiniLM-L6-v2
+    dimension: 384
+    max_tokens: 256
+    estimated_size_gb: 0.08
+    multilingual: false
+    license: apache-2.0
+    quality_score: 41.9
+    tags: [fast, small, english]
+    notes: Tiny and fast; fine for prototypes and edge devices, weak retrieval quality
+
+  - model_id: BAAI/bge-small-en-v1.5
+    dimension: 384
+    max_tokens: 512
+    estimated_size_gb: 0.13
+    multilingual: false
+    license: mit
+    quality_score: 51.7
+    tags: [quality, small, english]
+    notes: Best quality-per-MB for English on CPU
+
+  - model_id: BAAI/bge-base-en-v1.5
+    dimension: 768
+    max_tokens: 512
+    estimated_size_gb: 0.44
+    multilingual: false
+    license: mit
+    quality_score: 53.3
+    tags: [quality, english]
+    notes: Good balance of quality and size
+
+  - model_id: BAAI/bge-large-en-v1.5
+    dimension: 1024
+    max_tokens: 512
+    estimated_size_gb: 1.34
+    multilingual: false
+    license: mit
+    quality_score: 54.3
+    tags: [quality, large, english]
+    notes: High-quality English embeddings
+
+  - model_id: mixedbread-ai/mxbai-embed-large-v1
+    dimension: 1024
+    max_tokens: 512
+    estimated_size_gb: 1.34
+    multilingual: false
+    license: apache-2.0
+    quality_score: 54.4
+    tags: [quality, large, english, matryoshka]
+    notes: Strong English model; supports Matryoshka dimension truncation
+
+  - model_id: nomic-ai/nomic-embed-text-v1.5
+    dimension: 768
+    max_tokens: 8192
+    estimated_size_gb: 0.55
+    multilingual: false
+    license: apache-2.0
+    quality_score: 53.0
+    tags: [long-context, english, quality, matryoshka]
+    notes: Long context with good quality; needs "search_document:" / "search_query:" prefixes
+
+  - model_id: sentence-transformers/all-mpnet-base-v2
+    dimension: 768
+    max_tokens: 384
+    estimated_size_gb: 0.44
+    multilingual: false
+    license: apache-2.0
+    quality_score: 43.8
+    tags: [english]
+    notes: Older general-purpose model; superseded by BGE/GTE for retrieval
+
+  - model_id: intfloat/multilingual-e5-small
+    dimension: 384
+    max_tokens: 512
+    estimated_size_gb: 0.47
+    multilingual: true
+    license: mit
+    quality_score: 46.6
+    tags: [multilingual, small]
+    notes: Lightweight multilingual option; needs "query:" / "passage:" prefixes
+
+  - model_id: intfloat/multilingual-e5-base
+    dimension: 768
+    max_tokens: 512
+    estimated_size_gb: 1.11
+    multilingual: true
+    license: mit
+    quality_score: 48.9
+    tags: [multilingual, quality]
+    notes: Good multilingual balance; needs "query:" / "passage:" prefixes
+
+  - model_id: intfloat/multilingual-e5-large
+    dimension: 1024
+    max_tokens: 512
+    estimated_size_gb: 2.24
+    multilingual: true
+    license: mit
+    quality_score: 52.5
+    tags: [multilingual, large, quality]
+    notes: Strong multilingual retrieval across 100 languages
+
+  - model_id: BAAI/bge-m3
+    dimension: 1024
+    max_tokens: 8192
+    estimated_size_gb: 2.27
+    multilingual: true
+    license: mit
+    quality_score: 54.0
+    tags: [multilingual, large, long-context, hybrid]
+    notes: Dense + sparse + multi-vector in one model; 8192-token inputs, 100 languages
+
+  - model_id: Alibaba-NLP/gte-multilingual-base
+    dimension: 768
+    max_tokens: 8192
+    estimated_size_gb: 0.61
+    multilingual: true
+    license: apache-2.0
+    quality_score: 55.0
+    tags: [multilingual, long-context, quality]
+    notes: Compact multilingual model with 8192-token inputs; requires trust_remote_code
+
+  - model_id: jinaai/jina-embeddings-v3
+    dimension: 1024
+    max_tokens: 8192
+    estimated_size_gb: 2.29
+    multilingual: true
+    license: cc-by-nc-4.0
+    quality_score: 53.9
+    tags: [multilingual, long-context, matryoshka]
+    notes: Task-specific LoRA adapters; non-commercial license unless purchased
+
+  - model_id: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+    dimension: 768
+    max_tokens: 384
+    estimated_size_gb: 1.11
+    multilingual: true
+    license: apache-2.0
+    quality_score: 39.0
+    tags: [multilingual]
+    notes: Paraphrase model; weaker for retrieval than E5/BGE-M3
+
+# Hosted embedding APIs. Only considered when budget == paid_api and privacy
+# allows sending text to a third party. price_per_million_tokens is USD and
+# indicative only.
+api_embedding_models:
+  - model_id: openai/text-embedding-3-large
+    provider: openai
+    dimension: 3072
+    max_tokens: 8191
+    estimated_size_gb: 0
+    multilingual: true
+    license: proprietary
+    quality_score: 55.4
+    price_per_million_tokens: 0.13
+    tags: [api, multilingual, long-context, matryoshka]
+    notes: Highest-quality OpenAI embedder; dimensions can be truncated to 1024/256
+
+  - model_id: openai/text-embedding-3-small
+    provider: openai
+    dimension: 1536
+    max_tokens: 8191
+    estimated_size_gb: 0
+    multilingual: true
+    license: proprietary
+    quality_score: 51.1
+    price_per_million_tokens: 0.02
+    tags: [api, multilingual, long-context, cheap]
+    notes: Very cheap; good default when cost matters more than top quality
+
+  - model_id: cohere/embed-v4.0
+    provider: cohere
+    dimension: 1536
+    max_tokens: 128000
+    estimated_size_gb: 0
+    multilingual: true
+    license: proprietary
+    quality_score: 55.0
+    price_per_million_tokens: 0.12
+    tags: [api, multilingual, long-context, multimodal]
+    notes: Multilingual and multimodal; supports input_type query/document distinction
+
+  - model_id: voyage/voyage-3-large
+    provider: voyage
+    dimension: 1024
+    max_tokens: 32000
+    estimated_size_gb: 0
+    multilingual: true
+    license: proprietary
+    quality_score: 58.0
+    price_per_million_tokens: 0.18
+    tags: [api, multilingual, long-context]
+    notes: Top-tier retrieval quality; domain-specific variants exist (code, law, finance)
+
+# Language-specific tokenizers
+lang_tokenizers:
+  zh: jieba
+  ja: sudachi
+  ko: mecab
+  en: spacy
+  es: spacy
+  fr: spacy
+  de: spacy
+
+# spaCy model names per language
+spacy_models:
+  en: en_core_web_sm
+  es: es_core_news_sm
+  fr: fr_core_news_sm
+  de: de_core_news_sm
+
+# Vector DB profiles
+vector_db_profiles:
+  - name: ChromaDB
+    category: embedded
+    max_docs: 1000000
+    supports_metadata_filter: true
+    supports_hybrid_search: false
+    deployment: [local, on_prem, cloud]
+    library: chromadb
+    notes: Simple, embedded, no server needed. Great for prototyping.
+
+  - name: Qdrant
+    category: client-server
+    max_docs: 100000000
+    supports_metadata_filter: true
+    supports_hybrid_search: true
+    deployment: [local, on_prem, cloud]
+    library: qdrant-client
+    notes: Fast filtering, quantization support, production-ready.
+
+  - name: FAISS
+    category: in-memory
+    max_docs: 10000000
+    supports_metadata_filter: false
+    supports_hybrid_search: false
+    deployment: [local, edge]
+    library: faiss-cpu
+    notes: Fastest similarity search, no metadata filtering built-in.
+
+  - name: Weaviate
+    category: client-server
+    max_docs: 100000000
+    supports_metadata_filter: true
+    supports_hybrid_search: true
+    deployment: [cloud, on_prem]
+    library: weaviate-client
+    notes: Full-featured, built-in vectorization, GraphQL API.
+
+  - name: Pinecone
+    category: managed
+    max_docs: 1000000000
+    supports_metadata_filter: true
+    supports_hybrid_search: true
+    deployment: [cloud]
+    library: pinecone
+    notes: Fully managed, auto-scaling, requires API key.
+
+  - name: Milvus
+    category: client-server
+    max_docs: 1000000000
+    supports_metadata_filter: true
+    supports_hybrid_search: true
+    deployment: [on_prem, cloud]
+    library: pymilvus
+    notes: Self-hosted, distributed, handles billions of vectors.
+
+  - name: pgvector
+    category: embedded
+    max_docs: 10000000
+    supports_metadata_filter: true
+    supports_hybrid_search: true
+    deployment: [local, on_prem, cloud]
+    library: pgvector
+    notes: PostgreSQL extension; hybrid search via tsvector + vector in one query.
+
+  - name: LanceDB
+    category: embedded
+    max_docs: 10000000
+    supports_metadata_filter: true
+    supports_hybrid_search: true
+    deployment: [local, edge]
+    library: lancedb
+    notes: Embedded, serverless, good for local/edge deployment.

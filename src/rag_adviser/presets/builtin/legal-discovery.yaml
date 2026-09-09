@@ -1,0 +1,17 @@
+name: legal-discovery
+description: "E-discovery and legal document analysis — strict privacy, precise retrieval"
+answers:
+  content_type_override: legal
+  use_case: legal_analysis
+  environment: on_prem
+  latency_budget: "<2s"
+  hardware: cpu_only
+  ram_gb: 32
+  budget: self_hosted
+  privacy: strict
+  query_type: natural_questions
+  query_complexity: multi_hop
+  expected_answer_type: exact_passage
+  update_frequency: weekly
+  embedding_provider: huggingface
+  llm_provider: none

@@ -1,0 +1,17 @@
+name: air-gapped
+description: "Air-gapped / offline deployment — zero network access, all local"
+answers:
+  content_type_override: prose
+  use_case: question_answering
+  environment: on_prem
+  latency_budget: "<2s"
+  hardware: cpu_only
+  ram_gb: 16
+  budget: free
+  privacy: air_gapped
+  query_type: natural_questions
+  query_complexity: simple_factual
+  expected_answer_type: exact_passage
+  update_frequency: never
+  embedding_provider: huggingface
+  llm_provider: none
