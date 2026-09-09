@@ -159,6 +159,12 @@ class RecommendationVerifier:
                 parts.append(
                     f"hybrid={r.sparse_method} + dense, fusion={r.fusion_method} ({native})"
                 )
+            if recs.reranker and recs.reranker.enabled:
+                rr = recs.reranker
+                parts.append(
+                    f"reranker={rr.model_id} ({rr.provider}), top {rr.fetch_k} -> {rr.final_k}, "
+                    f"~{rr.estimated_latency_ms}ms"
+                )
             parts.append("")
 
         if recs.query_transformation and recs.query_transformation.techniques:

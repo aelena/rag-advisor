@@ -14,7 +14,6 @@ from rag_adviser.analyzers.constraint_analyzer import ConstraintAnalyzer
 from rag_adviser.analyzers.document_analyzer import DocumentAnalyzer
 from rag_adviser.models import (
     AnswerType,
-    LatencyBudget,
     PrivacyLevel,
     QueryComplexity,
     QueryType,
@@ -28,6 +27,7 @@ from rag_adviser.recommenders.chunking_recommender import ChunkingRecommender
 from rag_adviser.recommenders.hybrid_recommender import HybridRecommender
 from rag_adviser.recommenders.model_finder import HFModelFinder
 from rag_adviser.recommenders.query_recommender import QueryRecommender
+from rag_adviser.recommenders.reranker_recommender import RerankerRecommender
 from rag_adviser.recommenders.vector_db_recommender import VectorDBRecommender
 from rag_adviser.reporters.report_generator import ReportGenerator
 
@@ -185,6 +185,25 @@ class RAGAdviser:
                 recommendations.retrieval, want_hybrid, hybrid_reasons, recommendations.vector_db
             )
 
+            # Step 7b: Reranking stage (model choice + latency budget)
+            multilingual_needed = (
+                answers.future_languages
+                or bool(answers.document_stats and answers.document_stats.has_cjk)
+                or len(languages) > 1
+                or languages[0] != "en"
+            )
+            recommendations.reranker = RerankerRecommender().recommend(
+                answers,
+                recommendations.retrieval,
+                languages=languages,
+                multilingual=multilingual_needed,
+                chunk_tokens=recommendations.chunking.chunk_size,
+            )
+            recommendations.retrieval.rerank = recommendations.reranker.enabled
+            recommendations.retrieval.rerank_model = (
+                recommendations.reranker.model_id if recommendations.reranker.enabled else None
+            )
+
             # Step 8: Query transformation pipeline
             task = progress.add_task("Designing query pipeline...", total=None)
             query_rec = QueryRecommender()
@@ -318,17 +337,7 @@ class RAGAdviser:
         else:
             rec.top_k = 5
 
-        # Reranking based on latency budget
-        if answers.constraints.latency_budget == LatencyBudget.BATCH:
-            rec.rerank = True
-            rec.rerank_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-            rec.notes.append("Reranking recommended since latency is not critical")
-        elif answers.constraints.latency_budget == LatencyBudget.MODERATE:
-            rec.rerank = False
-            rec.notes.append("Reranking skipped to stay within <2s latency budget")
-        else:
-            rec.rerank = False
-            rec.notes.append("Reranking adds ~300ms, skipped for <500ms budget")
+        # Reranking is decided by RerankerRecommender (see Recommendations.reranker)
 
         # Query preprocessing
         if answers.query_type == QueryType.SHORT_KEYWORDS:
@@ -351,10 +360,8 @@ class RAGAdviser:
             )
         elif answers.query_complexity == QueryComplexity.MULTI_HOP:
             rec.top_k = max(rec.top_k, 8)
-            rec.rerank = True
-            rec.rerank_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
             rec.notes.append(
-                "Increased top_k and enabled reranking for multi-hop queries — "
+                "Increased top_k for multi-hop queries — "
                 "need to retrieve evidence across multiple documents"
             )
 
@@ -408,8 +415,17 @@ class RAGAdviser:
         if recs.vector_db and recs.vector_db.library:
             steps.append(f"pip install {recs.vector_db.library}")
 
-        if recs.retrieval and recs.retrieval.rerank and recs.retrieval.rerank_model:
-            steps.append("pip install sentence-transformers  # for cross-encoder reranking")
+        if recs.reranker and recs.reranker.enabled:
+            if recs.reranker.provider == "huggingface":
+                steps.append(
+                    f"pip install sentence-transformers  # cross-encoder reranker "
+                    f"{recs.reranker.model_id}"
+                )
+            else:
+                steps.append(
+                    f"Set up {recs.reranker.provider} API credentials for the "
+                    f"{recs.reranker.model_id} reranker"
+                )
 
         if recs.retrieval and recs.retrieval.hybrid_search and not recs.retrieval.hybrid_native:
             steps.append("pip install rank-bm25  # sparse retriever for hybrid search")
@@ -498,6 +514,13 @@ class RAGAdviser:
                 f"rerank={'Yes' if recs.retrieval.rerank else 'No'}, "
                 f"threshold={recs.retrieval.similarity_threshold}",
             )
+            if recs.reranker and recs.reranker.enabled:
+                table.add_row(
+                    "Reranker",
+                    recs.reranker.model_id,
+                    f"top {recs.reranker.fetch_k} -> {recs.reranker.final_k}, "
+                    f"~{recs.reranker.estimated_latency_ms}ms",
+                )
             if recs.retrieval.hybrid_search:
                 table.add_row(
                     "Hybrid Search",

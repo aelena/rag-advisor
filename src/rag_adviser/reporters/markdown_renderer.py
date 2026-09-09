@@ -70,6 +70,9 @@ class MarkdownRenderer:
         # Retrieval
         lines.extend(self._section_retrieval(recs))
 
+        # Reranking
+        lines.extend(self._section_reranker(recs))
+
         # Query Pipeline
         lines.extend(self._section_query_pipeline(recs))
 
@@ -331,6 +334,67 @@ class MarkdownRenderer:
                 lines.append(f"- {n}")
 
         lines.extend(["", "---", ""])
+        return lines
+
+    def _section_reranker(self, recs: Recommendations) -> list[str]:
+        """Render the reranking stage section."""
+        rr = recs.reranker
+        if rr is None:
+            return []
+
+        lines = ["## Reranking", ""]
+        if not rr.enabled:
+            lines.append("**Reranking:** not recommended for this profile")
+            for n in rr.notes:
+                lines.append(f"- {n}")
+            for w in rr.warnings:
+                lines.append(f"- **Warning:** {w}")
+            lines.extend(["", "---", ""])
+            return lines
+
+        lines.append(f"- **Model:** `{rr.model_id}`")
+        lines.append(f"- **Provider:** {rr.provider}")
+        lines.append(f"- **Pipeline:** retrieve top {rr.fetch_k} -> rerank -> keep {rr.final_k}")
+        lines.append(f"- **Estimated reranking latency:** ~{rr.estimated_latency_ms} ms")
+        lines.append(f"- **Relative quality:** ~{rr.quality_score:.0f}/100 (approx.)")
+        lines.append(f"- **Input window:** {rr.max_tokens} tokens")
+        lines.append(f"- **Multilingual:** {'Yes' if rr.multilingual else 'No'}")
+        lines.append(f"- **License:** {rr.license}")
+        if rr.trust_remote_code:
+            lines.append("- **Loading:** requires `trust_remote_code=True`")
+        lines.append("")
+
+        if rr.reasons:
+            lines.append("**Why rerank:**")
+            for r in rr.reasons:
+                lines.append(f"- {r}")
+            lines.append("")
+        if rr.model_reasons:
+            lines.append("**Why this model:**")
+            for r in rr.model_reasons:
+                lines.append(f"- {r}")
+            lines.append("")
+        if rr.warnings:
+            lines.append("**Warnings:**")
+            for w in rr.warnings:
+                lines.append(f"- {w}")
+            lines.append("")
+        if rr.alternatives:
+            lines.append("| Alternative | Provider | Score | Quality | Latency |")
+            lines.append("|-------------|----------|-------|---------|---------|")
+            for a in rr.alternatives:
+                lines.append(
+                    f"| `{a['model_id']}` | {a['provider']} | {a['score']:.2f} | "
+                    f"~{a['quality_score']:.0f} | ~{a['estimated_latency_ms']} ms |"
+                )
+            lines.append("")
+        if rr.code_snippet:
+            lines.append("```python")
+            lines.append(rr.code_snippet)
+            lines.append("```")
+            lines.append("")
+
+        lines.extend(["---", ""])
         return lines
 
     def _section_approach(self, recs: Recommendations) -> list[str]:

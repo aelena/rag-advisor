@@ -85,8 +85,9 @@ all = [
 ragadvisor = "rag_adviser.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/YOURUSERNAME/ragadvisor"
-Repository = "https://github.com/YOURUSERNAME/ragadvisor"
+Homepage = "https://github.com/aelena/rag-advisor"
+Repository = "https://github.com/aelena/rag-advisor"
+Issues = "https://github.com/aelena/rag-advisor/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
