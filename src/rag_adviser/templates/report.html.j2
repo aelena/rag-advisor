@@ -242,7 +242,27 @@
     {% if r.rerank and r.rerank_model %}
     <li><strong>Reranker:</strong> <code>{{ r.rerank_model }}</code></li>
     {% endif %}
+    <li><strong>Hybrid Search:</strong> {{ "Yes" if r.hybrid_search else "No" }}</li>
 </ul>
+
+{% if r.hybrid_search %}
+<h3>Hybrid Retrieval</h3>
+<ul class="property-list">
+    <li><strong>Sparse retriever:</strong> {{ r.sparse_method|upper }}
+        ({{ "native in the vector DB" if r.hybrid_native else "in-process (rank-bm25)" }})</li>
+    <li><strong>Fusion:</strong> {{ r.fusion_method|upper }}</li>
+</ul>
+{% if r.hybrid_reasons %}
+<ul>
+{% for reason in r.hybrid_reasons %}
+    <li>{{ reason }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if r.hybrid_code_snippet %}
+<pre><code>{{ r.hybrid_code_snippet }}</code></pre>
+{% endif %}
+{% endif %}
 
 {% if r.prompt_strategy != "none" %}
 <h3>Generation Settings</h3>
@@ -266,6 +286,43 @@
 <hr>
 
 {# ── Query Pipeline ───────────────────────────────────────────────── #}
+{% if recommendations.validation %}
+{% set v = recommendations.validation %}
+<h2>Validation Against Ground Truth</h2>
+{% if not v.ran %}
+<div class="warning-box">Validation did not run: {{ v.error }}</div>
+{% else %}
+<div class="info-box">
+    <strong>Verdict:</strong>
+    <span class="score-badge {% if v.verdict == 'strong' %}score-high{% elif v.verdict == 'acceptable' %}score-medium{% else %}score-low{% endif %}">{{ v.verdict }}</span>
+    ({{ v.num_queries }} queries, {{ v.num_chunks }} chunks)
+</div>
+<ul class="property-list">
+    <li><strong>Chunking strategy:</strong> {{ v.strategy }} @ {{ v.chunk_size_chars }} / {{ v.chunk_overlap_chars }} chars</li>
+    <li><strong>Embedding model:</strong> <code>{{ v.embedding_model }}</code></li>
+    <li><strong>Vector backend:</strong> {{ v.vector_backend }}</li>
+    <li><strong>Top-K:</strong> {{ v.top_k }}</li>
+</ul>
+<table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Hit Rate@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.hit_rate * 100) }}%</td></tr>
+    <tr><td>MRR</td><td>{{ "%.3f"|format(v.mrr) }}</td></tr>
+    <tr><td>Precision@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.precision_at_k * 100) }}%</td></tr>
+    <tr><td>Recall@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.recall_at_k * 100) }}%</td></tr>
+    <tr><td>nDCG@{{ v.top_k }}</td><td>{{ "%.3f"|format(v.ndcg_at_k) }}</td></tr>
+</table>
+{% if v.suggestions %}
+<h3>Next Steps</h3>
+<ul>
+{% for s in v.suggestions %}
+    <li>{{ s }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+<hr>
+{% endif %}
+
 {% if recommendations.query_transformation and recommendations.query_transformation.techniques %}
 <h2>Query Pipeline</h2>
 <p>

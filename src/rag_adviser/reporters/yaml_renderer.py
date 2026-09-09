@@ -101,6 +101,8 @@ class YamlRenderer:
                 "estimated_size_gb": top.estimated_size_gb,
                 "license": top.license,
                 "multilingual": top.multilingual,
+                "provider": top.provider,
+                "trust_remote_code": top.trust_remote_code,
             }
             if len(recs.embedding_models) > 1:
                 config["embedding"]["alternatives"] = [
@@ -144,6 +146,12 @@ class YamlRenderer:
             }
             if r.rerank and r.rerank_model:
                 config["retrieval"]["rerank_model"] = r.rerank_model
+            config["retrieval"]["hybrid"] = {
+                "enabled": r.hybrid_search,
+                "sparse_method": r.sparse_method,
+                "fusion": r.fusion_method,
+                "native_in_vector_db": r.hybrid_native,
+            }
             if r.prompt_strategy != "none":
                 config["generation"] = {
                     "temperature": r.temperature,
@@ -177,6 +185,35 @@ class YamlRenderer:
                 "refinements": v.refinements,
                 "additional_considerations": v.additional_considerations,
             }
+
+        # Validation against ground truth
+        if recs.validation:
+            v = recs.validation
+            config["validation"] = {
+                "ran": v.ran,
+            }
+            if v.ran:
+                config["validation"].update({
+                    "verdict": v.verdict,
+                    "strategy": v.strategy,
+                    "embedding_model": v.embedding_model,
+                    "chunk_size_chars": v.chunk_size_chars,
+                    "chunk_overlap_chars": v.chunk_overlap_chars,
+                    "vector_backend": v.vector_backend,
+                    "top_k": v.top_k,
+                    "num_queries": v.num_queries,
+                    "num_chunks": v.num_chunks,
+                    "metrics": {
+                        "hit_rate": round(v.hit_rate, 4),
+                        "mrr": round(v.mrr, 4),
+                        "precision_at_k": round(v.precision_at_k, 4),
+                        "recall_at_k": round(v.recall_at_k, 4),
+                        "ndcg_at_k": round(v.ndcg_at_k, 4),
+                    },
+                    "suggestions": v.suggestions,
+                })
+            else:
+                config["validation"]["error"] = v.error
 
         # Evaluation
         config["evaluation"] = {

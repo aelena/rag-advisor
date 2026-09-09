@@ -73,6 +73,9 @@ class MarkdownRenderer:
         # Query Pipeline
         lines.extend(self._section_query_pipeline(recs))
 
+        # Validation against ground truth
+        lines.extend(self._section_validation(recs))
+
         # LLM Verification
         lines.extend(self._section_llm_verification(recs))
 
@@ -151,6 +154,8 @@ class MarkdownRenderer:
         lines.append(f"- **Estimated Size:** {top.estimated_size_gb} GB")
         lines.append(f"- **License:** {top.license}")
         lines.append(f"- **Multilingual:** {'Yes' if top.multilingual else 'No'}")
+        if top.trust_remote_code:
+            lines.append("- **Loading:** requires `trust_remote_code=True`")
         lines.append(f"- **Fitness Score:** {top.score:.2f}")
         lines.append("")
 
@@ -289,7 +294,28 @@ class MarkdownRenderer:
         lines.append(f"- **Reranking:** {'Yes' if r.rerank else 'No'}")
         if r.rerank and r.rerank_model:
             lines.append(f"- **Reranker:** `{r.rerank_model}`")
+        lines.append(f"- **Hybrid Search:** {'Yes' if r.hybrid_search else 'No'}")
         lines.append("")
+
+        if r.hybrid_search:
+            lines.append("### Hybrid Retrieval")
+            lines.append("")
+            native = "native in the vector DB" if r.hybrid_native else "in-process (rank-bm25)"
+            lines.append(
+                f"- **Sparse retriever:** {r.sparse_method.upper()} ({native})"
+            )
+            lines.append(f"- **Fusion:** {r.fusion_method.upper()}")
+            if r.hybrid_reasons:
+                lines.append("")
+                lines.append("**Why:**")
+                for reason in r.hybrid_reasons:
+                    lines.append(f"- {reason}")
+            if r.hybrid_code_snippet:
+                lines.append("")
+                lines.append("```python")
+                lines.append(r.hybrid_code_snippet)
+                lines.append("```")
+            lines.append("")
 
         if r.prompt_strategy != "none":
             lines.append("### Generation Settings")
@@ -370,6 +396,56 @@ class MarkdownRenderer:
             lines.append("```python")
             lines.append(qt.code_snippet)
             lines.append("```")
+            lines.append("")
+
+        lines.extend(["---", ""])
+        return lines
+
+    def _section_validation(self, recs: Recommendations) -> list[str]:
+        """Render the ground-truth validation section."""
+        v = recs.validation
+        if v is None:
+            return []
+
+        lines = ["## Validation Against Ground Truth", ""]
+        if not v.ran:
+            lines.append(f"*Validation did not run:* {v.error}")
+            lines.extend(["", "---", ""])
+            return lines
+
+        lines.append(
+            f"**Verdict:** {v.verdict}  "
+            f"({v.num_queries} queries, {v.num_chunks} chunks)"
+        )
+        lines.append("")
+        lines.append("| Setting | Value |")
+        lines.append("|---------|-------|")
+        lines.append(f"| Chunking strategy | {v.strategy} |")
+        lines.append(
+            f"| Chunk size / overlap | {v.chunk_size_chars} / {v.chunk_overlap_chars} chars |"
+        )
+        lines.append(f"| Embedding model | `{v.embedding_model}` |")
+        lines.append(f"| Vector backend | {v.vector_backend} |")
+        lines.append(f"| Top-K | {v.top_k} |")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append(f"| Hit Rate@{v.top_k} | {v.hit_rate:.1%} |")
+        lines.append(f"| MRR | {v.mrr:.3f} |")
+        lines.append(f"| Precision@{v.top_k} | {v.precision_at_k:.1%} |")
+        lines.append(f"| Recall@{v.top_k} | {v.recall_at_k:.1%} |")
+        lines.append(f"| nDCG@{v.top_k} | {v.ndcg_at_k:.3f} |")
+        lines.append("")
+
+        if v.suggestions:
+            lines.append("**Next steps:**")
+            for s in v.suggestions:
+                lines.append(f"- {s}")
+            lines.append("")
+        if v.notes:
+            lines.append("**Notes:**")
+            for n in v.notes:
+                lines.append(f"- {n}")
             lines.append("")
 
         lines.extend(["---", ""])

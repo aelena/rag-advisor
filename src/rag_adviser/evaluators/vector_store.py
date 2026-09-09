@@ -365,6 +365,75 @@ class FaissVectorStore(BaseVectorStore):
         return self._index.ntotal if self._index else 0
 
 
+class InMemoryVectorStore(BaseVectorStore):
+    """Dependency-free brute-force store (numpy only).
+
+    Exact cosine search over a normalised matrix. Fine for evaluation-sized
+    corpora (up to a few hundred thousand chunks); it exists so that
+    ``ragadvisor run --validate`` works with nothing but sentence-transformers
+    installed. numpy is already a dependency of sentence-transformers.
+    """
+
+    def __init__(self) -> None:
+        try:
+            import numpy as np
+        except ImportError as e:  # pragma: no cover - numpy ships with sentence-transformers
+            raise VectorStoreError(
+                "numpy is required for the in-memory vector store. "
+                "Install: pip install ragadvisor[eval]"
+            ) from e
+        self._np = np
+        self._matrix = None  # (n, dim) float32, L2-normalised rows
+        self._chunks: list[Chunk] = []
+        self._dimension = 0
+
+    def create_collection(self, name: str, dimension: int) -> None:
+        self._dimension = dimension
+        self._matrix = self._np.empty((0, dimension), dtype=self._np.float32)
+        self._chunks = []
+
+    def add_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> None:
+        if not chunks or self._matrix is None:
+            return
+        vectors = self._np.asarray(embeddings, dtype=self._np.float32)
+        norms = self._np.linalg.norm(vectors, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        self._matrix = self._np.vstack([self._matrix, vectors / norms])
+        self._chunks.extend(chunks)
+
+    def search(self, query_embedding: list[float], top_k: int = 5) -> list[SearchResult]:
+        if self._matrix is None or len(self._chunks) == 0:
+            return []
+        q = self._np.asarray(query_embedding, dtype=self._np.float32)
+        norm = self._np.linalg.norm(q)
+        if norm > 0:
+            q = q / norm
+        scores = self._matrix @ q
+        k = min(top_k, len(self._chunks))
+        top = self._np.argpartition(-scores, k - 1)[:k]
+        top = top[self._np.argsort(-scores[top])]
+        return [
+            SearchResult(
+                text=self._chunks[i].text,
+                source_file=self._chunks[i].source_file,
+                score=float(scores[i]),
+                metadata={
+                    "source": self._chunks[i].source_file,
+                    "chunk_index": self._chunks[i].chunk_index,
+                    "strategy": self._chunks[i].strategy,
+                },
+            )
+            for i in top
+        ]
+
+    def delete_collection(self) -> None:
+        self._matrix = None
+        self._chunks = []
+
+    def count(self) -> int:
+        return len(self._chunks)
+
+
 class SqliteVecStore(BaseVectorStore):
     """SQLite + sqlite-vec backed vector store for evaluation.
 
@@ -526,7 +595,7 @@ def create_vector_store(
     """Factory function to create the appropriate vector store.
 
     Args:
-        backend: "chroma", "pgvector", "faiss", or "sqlite"
+        backend: "chroma", "pgvector", "faiss", "sqlite", or "memory"
         connection_string: PostgreSQL connection string (pgvector) or
                           SQLite DB path (sqlite). Defaults vary by backend.
 
@@ -540,11 +609,13 @@ def create_vector_store(
         return ChromaVectorStore()
     elif backend == "faiss":
         return FaissVectorStore()
+    elif backend == "memory":
+        return InMemoryVectorStore()
     elif backend == "sqlite":
         db_path = connection_string or ":memory:"
         return SqliteVecStore(db_path=db_path)
     else:
         raise VectorStoreError(
             f"Unknown vector store backend: '{backend}'. "
-            f"Use 'chroma', 'faiss', 'pgvector', or 'sqlite'."
+            f"Use 'chroma', 'faiss', 'pgvector', 'sqlite', or 'memory'."
         )

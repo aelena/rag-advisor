@@ -139,6 +139,17 @@ def run(
         typer.Option("--ground-truth/--no-ground-truth",
                      help="Have ground truth evaluation data?"),
     ] = None,
+    ground_truth_path: Annotated[
+        Path | None,
+        typer.Option("--ground-truth-path",
+                     help="Ground truth file (JSONL or CSV) used by --validate"),
+    ] = None,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate/--no-validate",
+                     help="Run the recommended configuration against the ground truth "
+                          "and report retrieval metrics (requires ragadvisor[eval])"),
+    ] = False,
     # Output options
     output_format: Annotated[
         str,
@@ -210,6 +221,7 @@ def run(
                 sample_queries=sample_query or [],
                 update_frequency=update_frequency,
                 has_ground_truth=has_ground_truth,
+                ground_truth_path=ground_truth_path,
             )
         else:
             from rag_adviser.input_modes.interactive import InteractiveFlow
@@ -218,6 +230,27 @@ def run(
             answers = flow.run()
 
         answers.use_llm_verification = use_llm
+
+        # --ground-truth-path / --validate apply to every input mode
+        if ground_truth_path is not None:
+            if not ground_truth_path.exists():
+                console.print(
+                    f"[bold red]Error:[/] Ground truth file not found: {ground_truth_path}"
+                )
+                raise typer.Exit(1)
+            answers.ground_truth_path = ground_truth_path
+            answers.has_ground_truth = True
+        if validate:
+            if not answers.ground_truth_path:
+                console.print(
+                    "[bold red]Error:[/] --validate needs a ground truth file "
+                    "(--ground-truth-path, or set it in the XML/interactive flow)"
+                )
+                raise typer.Exit(1)
+            if not answers.document_path:
+                console.print("[bold red]Error:[/] --validate needs a corpus (--document-path)")
+                raise typer.Exit(1)
+            answers.run_validation = True
 
         # Parse output format
         try:
@@ -256,6 +289,11 @@ def evaluate(
         typer.Option("--model", "-m",
                      help="Embedding model to use for evaluation"),
     ] = "sentence-transformers/all-MiniLM-L6-v2",
+    trust_remote_code: Annotated[
+        bool,
+        typer.Option("--trust-remote-code",
+                     help="Allow models that ship custom code (nomic, gte, jina)"),
+    ] = False,
     # Chunking strategies to compare
     strategy: Annotated[
         list[str] | None,
@@ -281,7 +319,7 @@ def evaluate(
     backend: Annotated[
         str,
         typer.Option("--backend", "-b",
-                     help="Vector store backend: chroma, faiss, pgvector, sqlite"),
+                     help="Vector store backend: chroma, faiss, pgvector, sqlite, memory"),
     ] = "chroma",
     db_connection: Annotated[
         str,
@@ -344,6 +382,7 @@ def evaluate(
         corpus_path=corpus,
         ground_truth_path=ground_truth,
         embedding_model=model,
+        trust_remote_code=trust_remote_code,
         strategies=strategies,
         top_k=top_k,
         chunk_size=chunk_size,

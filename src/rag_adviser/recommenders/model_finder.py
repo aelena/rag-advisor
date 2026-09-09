@@ -338,6 +338,13 @@ class HFModelFinder:
             score += 0.05
             reasons.append(f"Supports long inputs ({max_tokens} tokens)")
 
+        trust_remote_code = bool(candidate.get("trust_remote_code", False))
+        if trust_remote_code:
+            warnings.append(
+                "Loads custom model code from the Hub: pass trust_remote_code=True "
+                "and review the repository before use in restricted environments"
+            )
+
         if notes:
             reasons.append(str(notes))
 
@@ -355,6 +362,7 @@ class HFModelFinder:
             release_date=str(candidate.get("release_date", "unknown")),
             multilingual=is_multilingual,
             provider=provider,
+            trust_remote_code=trust_remote_code,
             quality_score=quality,
             score=score,
             reasons=reasons,

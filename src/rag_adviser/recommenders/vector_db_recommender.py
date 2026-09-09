@@ -26,6 +26,7 @@ class VectorDBRecommender:
         update_frequency: UpdateFrequency = UpdateFrequency.NEVER,
         estimated_chunks: int | None = None,
         embedding_dimension: int = 0,
+        prefer_hybrid: bool = False,
     ) -> VectorDBRecommendation:
         """Select and return the best-fit vector database.
 
@@ -37,6 +38,8 @@ class VectorDBRecommender:
                 omitted a rough ~5 chunks/document heuristic is used.
             embedding_dimension: Dimension of the chosen embedding model, used
                 to fill in the code snippet. 0 = unknown.
+            prefer_hybrid: True when hybrid (BM25 + dense) retrieval is
+                recommended; backends with native hybrid search score higher.
 
         Returns:
             VectorDBRecommendation with provider, reasons, and code snippet.
@@ -50,7 +53,7 @@ class VectorDBRecommender:
 
         for db in self._db_profiles:
             score, reasons = self._score_db(
-                db, estimated_chunks, constraints, update_frequency
+                db, estimated_chunks, constraints, update_frequency, prefer_hybrid
             )
             scored.append((score, db, reasons))
 
@@ -84,6 +87,7 @@ class VectorDBRecommender:
         chunk_count: int,
         constraints: HardwareConstraints,
         update_frequency: UpdateFrequency,
+        prefer_hybrid: bool = False,
     ) -> tuple[float, list[str]]:
         """Score a DB profile against requirements."""
         score = 0.0
@@ -144,9 +148,14 @@ class VectorDBRecommender:
             score += 0.15
             reasons.append("Simple embedded DB, no server setup needed")
 
-        # ── Hybrid search bonus ────────────────────────────────────────────
+        # ── Hybrid search ──────────────────────────────────────────────────
         if db.get("supports_hybrid_search"):
             score += 0.05
+            if prefer_hybrid:
+                score += 0.2
+                reasons.append("Native hybrid (BM25 + vector) search")
+        elif prefer_hybrid:
+            score -= 0.1
 
         return score, reasons
 

@@ -41,6 +41,7 @@ class EvalConfig:
     corpus_path: Path = field(default_factory=lambda: Path("."))
     ground_truth_path: Path = field(default_factory=lambda: Path("ground_truth.jsonl"))
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    trust_remote_code: bool = False  # for models that ship custom code (nomic, gte, jina)
     strategies: list[str] = field(
         default_factory=lambda: ["recursive", "semantic", "hierarchical", "adaptive"]
     )
@@ -106,7 +107,7 @@ class EvalPipelineRunner:
 
             # Step 3: Load embedding model
             task = progress.add_task("Loading embedding model...", total=1)
-            self._load_embedding_model(config.embedding_model)
+            self._load_embedding_model(config.embedding_model, config.trust_remote_code)
             progress.update(task, completed=1)
             self.console.print(
                 f"  Model: {config.embedding_model} (dim={self._dimension})"
@@ -187,7 +188,7 @@ class EvalPipelineRunner:
 
         return report
 
-    def _load_embedding_model(self, model_id: str) -> None:
+    def _load_embedding_model(self, model_id: str, trust_remote_code: bool = False) -> None:
         """Load the sentence-transformers model."""
         try:
             from sentence_transformers import SentenceTransformer
@@ -197,7 +198,7 @@ class EvalPipelineRunner:
                 "Install: pip install ragadvisor[eval]"
             ) from e
 
-        self._model = SentenceTransformer(model_id)
+        self._model = SentenceTransformer(model_id, trust_remote_code=trust_remote_code)
         # Get dimension from a test encode
         test_emb = self._model.encode(["test"], show_progress_bar=False)
         self._dimension = len(test_emb[0])

@@ -25,6 +25,7 @@ from rag_adviser.models import (
     UserAnswers,
 )
 from rag_adviser.recommenders.chunking_recommender import ChunkingRecommender
+from rag_adviser.recommenders.hybrid_recommender import HybridRecommender
 from rag_adviser.recommenders.model_finder import HFModelFinder
 from rag_adviser.recommenders.query_recommender import QueryRecommender
 from rag_adviser.recommenders.vector_db_recommender import VectorDBRecommender
@@ -166,17 +167,23 @@ class RAGAdviser:
                 estimated_chunks = max(
                     1, int(answers.document_stats.total_tokens / stride)
                 )
+            hybrid_rec = HybridRecommender()
+            want_hybrid, hybrid_reasons = hybrid_rec.assess(answers, content_type, languages)
             recommendations.vector_db = db_rec.recommend(
                 doc_count=doc_count,
                 constraints=answers.constraints,
                 update_frequency=answers.update_frequency,
                 estimated_chunks=estimated_chunks,
                 embedding_dimension=top_model.dimension if top_model else 0,
+                prefer_hybrid=want_hybrid,
             )
             progress.remove_task(task)
 
-            # Step 7: Retrieval settings
+            # Step 7: Retrieval settings (dense defaults + optional BM25 hybrid)
             recommendations.retrieval = self._recommend_retrieval(answers)
+            hybrid_rec.apply(
+                recommendations.retrieval, want_hybrid, hybrid_reasons, recommendations.vector_db
+            )
 
             # Step 8: Query transformation pipeline
             task = progress.add_task("Designing query pipeline...", total=None)
@@ -189,6 +196,30 @@ class RAGAdviser:
                 recommendations, answers
             )
 
+        # Step 9b: Validate against the user's ground truth (optional). Runs
+        # outside the spinner because the evaluation pipeline drives its own
+        # progress display.
+        if answers.run_validation:
+            from rag_adviser.evaluators.validator import RecommendationValidator
+
+            self.console.print(
+                "\n[bold cyan]Validating the recommended configuration "
+                "against your ground truth...[/]"
+            )
+            recommendations.validation = RecommendationValidator(
+                console=self.console
+            ).validate(answers, recommendations)
+            if recommendations.validation.error:
+                recommendations.warnings.append(
+                    f"VALIDATION SKIPPED: {recommendations.validation.error}"
+                )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=self.console,
+            transient=True,
+        ) as progress:
             # Step 10: LLM verification (optional)
             if answers.use_llm_verification:
                 task = progress.add_task("LLM verification...", total=None)
@@ -380,7 +411,20 @@ class RAGAdviser:
         if recs.retrieval and recs.retrieval.rerank and recs.retrieval.rerank_model:
             steps.append("pip install sentence-transformers  # for cross-encoder reranking")
 
-        steps.append("Run validation script with sample queries")
+        if recs.retrieval and recs.retrieval.hybrid_search and not recs.retrieval.hybrid_native:
+            steps.append("pip install rank-bm25  # sparse retriever for hybrid search")
+
+        if recs.validation and recs.validation.ran:
+            steps.append(
+                f"Validated: hit rate {recs.validation.hit_rate:.0%}, "
+                f"MRR {recs.validation.mrr:.2f} ({recs.validation.verdict}); "
+                f"see the Validation section"
+            )
+        else:
+            steps.append(
+                "Measure before shipping: ragadvisor run --validate "
+                "--ground-truth-path <queries.jsonl> (or ragadvisor evaluate)"
+            )
         steps.append(
             "If adding languages later: re-embed ALL documents with multilingual model"
         )
@@ -454,6 +498,14 @@ class RAGAdviser:
                 f"rerank={'Yes' if recs.retrieval.rerank else 'No'}, "
                 f"threshold={recs.retrieval.similarity_threshold}",
             )
+            if recs.retrieval.hybrid_search:
+                table.add_row(
+                    "Hybrid Search",
+                    f"{recs.retrieval.sparse_method.upper()} + dense "
+                    f"({recs.retrieval.fusion_method.upper()})",
+                    "native in vector DB" if recs.retrieval.hybrid_native
+                    else "in-process (rank-bm25)",
+                )
             if recs.retrieval.prompt_strategy != "none":
                 table.add_row(
                     "Generation",
@@ -499,6 +551,22 @@ class RAGAdviser:
                     border_style="magenta",
                 )
             )
+            self.console.print()
+
+        # Validation
+        if recs.validation and recs.validation.ran:
+            v = recs.validation
+            colour = {"strong": "green", "acceptable": "yellow"}.get(v.verdict, "red")
+            body = (
+                f"[bold]Verdict:[/] [{colour}]{v.verdict}[/]  "
+                f"({v.num_queries} queries, {v.num_chunks} chunks, "
+                f"{v.strategy} @ {v.chunk_size_chars} chars, {v.embedding_model})\n\n"
+                f"Hit rate@{v.top_k}: {v.hit_rate:.1%}   MRR: {v.mrr:.3f}   "
+                f"Recall@{v.top_k}: {v.recall_at_k:.1%}   nDCG@{v.top_k}: {v.ndcg_at_k:.3f}"
+            )
+            if v.suggestions:
+                body += "\n\n[bold]Next steps:[/]\n" + "\n".join(f"  - {s}" for s in v.suggestions)
+            self.console.print(Panel(body, title="Validation", border_style=colour))
             self.console.print()
 
         # Output files

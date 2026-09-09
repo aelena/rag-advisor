@@ -512,6 +512,12 @@ class InteractiveFlow:
             gt_path = Prompt.ask("Path to ground truth file (or press Enter to skip)", default="")
             if gt_path.strip():
                 self.answers.ground_truth_path = Path(gt_path.strip())
+                if self.answers.document_path:
+                    self.answers.run_validation = Confirm.ask(
+                        "Validate the recommended configuration against it now? "
+                        "(embeds your corpus locally; needs ragadvisor[eval])",
+                        default=False,
+                    )
 
         # LLM verification option
         self.console.print()

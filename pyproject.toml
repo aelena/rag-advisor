@@ -52,19 +52,23 @@ spacy = [
 ]
 eval = [
     "sentence-transformers>=2.2.0",
+    "einops>=0.7.0",
     "chromadb>=0.4.0",
 ]
 eval-faiss = [
     "sentence-transformers>=2.2.0",
+    "einops>=0.7.0",
     "faiss-cpu>=1.7.0",
 ]
 eval-pgvector = [
     "sentence-transformers>=2.2.0",
+    "einops>=0.7.0",
     "psycopg[binary]>=3.1.0",
     "pgvector>=0.2.0",
 ]
 eval-sqlite = [
     "sentence-transformers>=2.2.0",
+    "einops>=0.7.0",
     "sqlite-vec>=0.1.0",
 ]
 dev = [

@@ -150,6 +150,22 @@ ragadvisor presets
 
 At the end of the interactive questionnaire, you'll be asked if you want to save your answers as a custom preset. Custom presets are stored in `~/.ragadvisor/presets/` as YAML or JSON files.
 
+## Validate Before You Build
+
+`--validate` closes the loop between advice and measurement. It takes the recommended chunking strategy, chunk size, embedding model and top-k, runs them through the evaluation pipeline on **your** corpus and **your** queries, and attaches the retrieval metrics to the report with a verdict and concrete next steps.
+
+```bash
+ragadvisor run --no-interactive -d ./docs --use-case question_answering \
+  --ground-truth-path ./queries.jsonl --validate
+```
+
+- Requires `pip install ragadvisor[eval]` (embeds the corpus locally; nothing leaves your machine).
+- Ground truth is the same JSONL/CSV format as `ragadvisor evaluate`: `{"query": "...", "relevant_docs": ["file.txt"]}` per line.
+- If the top embedding recommendation is a hosted API, the best local alternative is evaluated instead and the report says so. If a model fails to load (missing extra package, gated repo), the next recommended local model is tried and the report lists what was skipped.
+- With no vector database installed, an exact numpy search (`--backend memory`) is used, so only `sentence-transformers` is strictly required.
+- Verdicts: **strong** (hit rate ≥ 80%), **acceptable** (≥ 60%), **weak**. Weak results come with suggestions: raise top-k, add a reranker, enable hybrid search, or compare strategies with `ragadvisor evaluate`.
+- The interactive flow offers validation as soon as you provide a ground-truth path.
+
 ## LLM Verification
 
 The `--use-llm` flag sends your rule-based recommendations to an LLM for expert review. The LLM assesses each recommendation, notes agreements, suggests refinements, and flags additional considerations.
@@ -216,6 +232,7 @@ ragadvisor evaluate ./docs ./queries.jsonl --backend pgvector --db-connection "p
 - **faiss** — FAISS IndexFlatIP (fastest similarity search)
 - **pgvector** — PostgreSQL + pgvector (production-realistic)
 - **sqlite** — SQLite + sqlite-vec (lightweight, file-based)
+- **memory** — exact numpy search, no extra dependency (default for `--validate` when nothing else is installed)
 
 ### CI/Regression Mode
 
@@ -299,6 +316,8 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--sample-query TEXT` | | Sample queries for tuning (repeatable) |
 | `--update-frequency FREQ` | | `never`, `weekly`, `daily`, `realtime` |
 | `--ground-truth / --no-ground-truth` | | Have evaluation data? |
+| `--ground-truth-path PATH` | | Ground truth file (JSONL/CSV) for `--validate` |
+| `--validate / --no-validate` | | Run the recommended configuration against the ground truth and report metrics |
 | `--format FORMAT` | `-f` | `markdown`, `html`, `yaml`, `all` (default: `all`) |
 | `--output DIR` | `-o` | Output directory (default: `./rag_report`) |
 | `--use-llm / --no-llm` | | Send recommendations to an LLM for verification |
@@ -461,6 +480,20 @@ CJK languages get a 30% reduction in chunk size (character-density adjustment). 
 | Legal | 5 | 0.0 | 1000 | refine | 0.75 |
 
 Retrieval settings are further adjusted based on query complexity and expected answer type.
+
+### Hybrid Retrieval (BM25 + dense)
+
+Dense embeddings blur exact terms: product codes, function names, statute numbers, citations. The advisor recommends a BM25 sparse retriever run alongside the vector search and merged with reciprocal rank fusion when the evidence adds up:
+
+| Signal | Weight |
+|--------|--------|
+| Short keyword queries | strong |
+| Code, legal, tabular or scientific content | strong |
+| Code assistance, legal analysis or semantic search use case | medium |
+| Exact-passage answers expected | medium |
+| Aggregative queries | medium |
+
+One strong or two medium signals trigger the recommendation. When hybrid is recommended, vector databases with native hybrid search (Qdrant, Weaviate, pgvector, LanceDB, Pinecone, Milvus) score higher, the report includes a ready-to-run `rank-bm25` + RRF snippet plus the native equivalent for the chosen database, and CJK corpora get a word-segmentation note.
 
 ## Output & Reports
 
