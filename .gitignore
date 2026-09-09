@@ -35,8 +35,12 @@ htmlcov/
 # Reports (generated output)
 rag_report/
 
-# Claude Code
-.claude/
+# Claude Code: local settings, hooks and tooling skills stay private;
+# the project's own skill (.claude/skills/rag-advisor) is shared.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/rag-advisor/
 
 # Environment
 .env

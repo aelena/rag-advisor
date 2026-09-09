@@ -481,7 +481,18 @@ def analyze(
         table.add_column("Property", style="bold cyan")
         table.add_column("Value", style="white")
 
-        table.add_row("Total files", str(stats.total_files))
+        table.add_row("Text documents", str(stats.total_files))
+        if stats.total_files_all != stats.total_files:
+            table.add_row("All files (incl. non-text)", str(stats.total_files_all))
+            non_text = ", ".join(
+                f"{c} {k}" for k, c in sorted(stats.modalities.items()) if k != "document"
+            )
+            table.add_row("Non-text modalities", non_text)
+        if stats.scanned_pdfs:
+            table.add_row(
+                "Scanned PDFs (no text layer)",
+                f"{stats.scanned_pdfs} of {stats.sampled_pdfs} sampled",
+            )
         table.add_row("Total size", f"{stats.total_size_bytes / 1_048_576:.1f} MB")
         table.add_row("Primary language", stats.primary_language)
         table.add_row("CJK content", "Yes" if stats.has_cjk else "No")

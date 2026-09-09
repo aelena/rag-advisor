@@ -108,6 +108,10 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# Catalogue of ingestion advice: long prose strings are the content, not code.
+"src/rag_adviser/recommenders/modality_recommender.py" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"

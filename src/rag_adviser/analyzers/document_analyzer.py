@@ -36,6 +36,24 @@ _CODE_EXTENSIONS = {
 _TABULAR_EXTENSIONS = {".csv", ".tsv"}
 _PDF_EXTENSIONS = {".pdf"}
 _DOCX_EXTENSIONS = {".docx"}
+_DOC_EXTENSIONS = _TEXT_EXTENSIONS | _CODE_EXTENSIONS | _PDF_EXTENSIONS | _DOCX_EXTENSIONS
+
+# Non-text modalities: counted and reported, never opened.
+_MODALITY_EXTENSIONS = {
+    "image": {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".svg", ".heic"},
+    "video": {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv"},
+    "audio": {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma"},
+    "spreadsheet": {".xlsx", ".xlsm", ".xls", ".ods", ".numbers"},
+    "presentation": {".pptx", ".ppt", ".odp", ".key"},
+    "cad": {
+        ".dwg", ".dxf", ".dgn", ".ifc", ".rvt", ".step", ".stp", ".iges", ".igs", ".skp", ".3dm",
+    },
+}
+# Files nobody would want indexed: build artefacts, archives, binaries.
+_IGNORED_EXTENSIONS = {
+    ".pyc", ".pyo", ".class", ".o", ".so", ".dll", ".exe", ".zip", ".tar", ".gz", ".7z",
+    ".rar", ".lock", ".log", ".tmp", ".bak", ".ds_store", ".ini", ".cfg", ".toml", ".env",
+}
 
 _MAX_SAMPLE_DOCS = 50
 _MAX_CHARS_PER_DOC = 5000
@@ -111,28 +129,42 @@ class DocumentAnalyzer:
         token_estimates: list[float] = []   # estimated full-document tokens
         sentence_counts: list[int] = []
 
-        files = list(self._walk_files(corpus_path))
-        if not files:
+        all_files = list(self._walk_all(corpus_path))
+        if not all_files:
             raise DocumentAnalysisError(f"No supported documents found in: {corpus_path}")
 
-        for file_path in files:
-            stats.total_files += 1
-            try:
-                stats.total_size_bytes += file_path.stat().st_size
-            except OSError:
-                continue
+        files: list[Path] = []
+        for file_path in all_files:
             ext = file_path.suffix.lower()
+            modality = self._modality_of(ext)
+            if modality is None:
+                continue  # build artefacts, archives, config noise
+            stats.total_files_all += 1
+            stats.modalities[modality] = stats.modalities.get(modality, 0) + 1
             stats.file_types[ext] = stats.file_types.get(ext, 0) + 1
+            if modality == "document":
+                files.append(file_path)
+                stats.total_files += 1
+                try:
+                    stats.total_size_bytes += file_path.stat().st_size
+                except OSError:
+                    continue
+
+        if not files and stats.total_files_all == 0:
+            raise DocumentAnalysisError(f"No supported documents found in: {corpus_path}")
 
         # Sample evenly across the sorted file list so that one large
         # sub-directory does not dominate the sample.
         for file_path in self._sample(files, _MAX_SAMPLE_DOCS):
+            is_pdf = file_path.suffix.lower() in _PDF_EXTENSIONS
+            if is_pdf:
+                stats.sampled_pdfs += 1
             extracted = self._extract_text(file_path)
-            if not extracted:
+            if not extracted or not extracted[0].strip():
+                if is_pdf:
+                    stats.scanned_pdfs += 1  # no text layer: needs OCR
                 continue
             full_text, scale = extracted
-            if not full_text.strip():
-                continue
 
             text = full_text[:_MAX_CHARS_PER_DOC]
             texts.append(text)
@@ -176,22 +208,35 @@ class DocumentAnalyzer:
 
     # ── File discovery ─────────────────────────────────────────────────────
 
-    def _walk_files(self, path: Path) -> Iterator[Path]:
-        """Yield all supported files recursively, skipping hidden dirs."""
-        all_extensions = _TEXT_EXTENSIONS | _CODE_EXTENSIONS | _PDF_EXTENSIONS | _DOCX_EXTENSIONS
-
+    def _walk_all(self, path: Path) -> Iterator[Path]:
+        """Yield every file recursively, skipping hidden dirs and files."""
         if path.is_file():
-            if path.suffix.lower() in all_extensions:
-                yield path
+            yield path
             return
 
         for item in sorted(path.rglob("*")):
-            if (
-                item.is_file()
-                and item.suffix.lower() in all_extensions
-                and not any(p.startswith(".") for p in item.relative_to(path).parts)
+            if item.is_file() and not any(
+                p.startswith(".") for p in item.relative_to(path).parts
             ):
                 yield item
+
+    def _walk_files(self, path: Path) -> Iterator[Path]:
+        """Yield text-extractable documents only (kept for callers that need just those)."""
+        for item in self._walk_all(path):
+            if item.suffix.lower() in _DOC_EXTENSIONS:
+                yield item
+
+    @staticmethod
+    def _modality_of(ext: str) -> str | None:
+        """Classify an extension: 'document', a non-text modality, 'other', or None to skip."""
+        if ext in _DOC_EXTENSIONS:
+            return "document"
+        for modality, exts in _MODALITY_EXTENSIONS.items():
+            if ext in exts:
+                return modality
+        if ext in _IGNORED_EXTENSIONS or not ext:
+            return None
+        return "other"
 
     @staticmethod
     def _sample(files: list[Path], limit: int) -> list[Path]:

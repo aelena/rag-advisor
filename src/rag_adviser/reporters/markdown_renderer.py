@@ -58,6 +58,9 @@ class MarkdownRenderer:
         # User Input Summary
         lines.extend(self._section_user_input(answers))
 
+        # Non-text modalities
+        lines.extend(self._section_modalities(recs))
+
         # Embedding Models
         lines.extend(self._section_embedding_models(answers, recs))
 
@@ -132,6 +135,57 @@ class MarkdownRenderer:
                     lines.append(f"  - {lang}: {pct:.0%}")
 
         lines.extend(["", "---", ""])
+        return lines
+
+    def _section_modalities(self, recs: Recommendations) -> list[str]:
+        """Render ingestion advice for non-text modalities."""
+        if not recs.modalities:
+            return []
+
+        lines = ["## Non-Text Modalities", ""]
+        lines.append(
+            "The text pipeline in this report covers documents only. "
+            "The corpus also contains the following, each needing its own ingestion path."
+        )
+        lines.append("")
+        lines.append("| Modality | Files | Share | Strategy |")
+        lines.append("|----------|-------|-------|----------|")
+        for m in recs.modalities:
+            lines.append(
+                f"| {m.modality.replace('_', ' ')} | {m.file_count} | "
+                f"{m.share:.0%} | {m.strategy} |"
+            )
+        lines.append("")
+
+        for m in recs.modalities:
+            lines.append(f"### {m.modality.replace('_', ' ').title()}")
+            lines.append("")
+            if m.extensions:
+                lines.append(f"- **Extensions:** {', '.join(m.extensions)}")
+            lines.append(f"- **Embedding:** {m.embedding}")
+            lines.append(f"- **Chunking:** {m.chunking}")
+            lines.append("")
+            if m.ingestion:
+                lines.append("**Ingestion steps:**")
+                for i, step in enumerate(m.ingestion, 1):
+                    lines.append(f"{i}. {step}")
+                lines.append("")
+            if m.tools_local:
+                lines.append(f"- **Local tools:** {'; '.join(m.tools_local)}")
+            if m.tools_hosted:
+                lines.append(f"- **Hosted services:** {'; '.join(m.tools_hosted)}")
+            for n in m.notes:
+                lines.append(f"- {n}")
+            for w in m.warnings:
+                lines.append(f"- **Warning:** {w}")
+            if m.code_snippet:
+                lines.append("")
+                lines.append("```python")
+                lines.append(m.code_snippet)
+                lines.append("```")
+            lines.append("")
+
+        lines.extend(["---", ""])
         return lines
 
     def _section_embedding_models(

@@ -87,6 +87,32 @@
 <hr>
 
 {# ── Embedding Model ──────────────────────────────────────────────── #}
+{% if recommendations.modalities %}
+<h2>Non-Text Modalities</h2>
+<p>The text pipeline covers documents only. The corpus also contains:</p>
+<table>
+    <tr><th>Modality</th><th>Files</th><th>Share</th><th>Strategy</th></tr>
+    {% for m in recommendations.modalities %}
+    <tr><td>{{ m.modality|replace("_", " ") }}</td><td>{{ m.file_count }}</td><td>{{ "%.0f"|format(m.share * 100) }}%</td><td>{{ m.strategy }}</td></tr>
+    {% endfor %}
+</table>
+{% for m in recommendations.modalities %}
+<h3>{{ m.modality|replace("_", " ")|title }}</h3>
+<ul class="property-list">
+    {% if m.extensions %}<li><strong>Extensions:</strong> {{ m.extensions|join(", ") }}</li>{% endif %}
+    <li><strong>Embedding:</strong> {{ m.embedding }}</li>
+    <li><strong>Chunking:</strong> {{ m.chunking }}</li>
+    {% if m.tools_local %}<li><strong>Local tools:</strong> {{ m.tools_local|join("; ") }}</li>{% endif %}
+    {% if m.tools_hosted %}<li><strong>Hosted services:</strong> {{ m.tools_hosted|join("; ") }}</li>{% endif %}
+</ul>
+{% if m.ingestion %}<ol>{% for s in m.ingestion %}<li>{{ s }}</li>{% endfor %}</ol>{% endif %}
+{% for n in m.notes %}<div class="info-box">{{ n }}</div>{% endfor %}
+{% for w in m.warnings %}<div class="warning-box">{{ w }}</div>{% endfor %}
+{% if m.code_snippet %}<pre><code>{{ m.code_snippet }}</code></pre>{% endif %}
+{% endfor %}
+<hr>
+{% endif %}
+
 <h2>Embedding Model</h2>
 {% if recommendations.embedding_models %}
 {% set top = recommendations.embedding_models[0] %}
