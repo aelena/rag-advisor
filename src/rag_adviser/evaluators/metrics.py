@@ -29,6 +29,7 @@ class EvalMetrics:
 
     strategy_name: str = ""
     retrieval_mode: str = "dense"  # dense | hybrid | dense+rerank | hybrid+rerank
+    embedding_model: str = ""
     num_queries: int = 0
     num_chunks: int = 0
     hit_rate: float = 0.0

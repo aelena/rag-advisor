@@ -411,6 +411,9 @@
     <tr><td>Precision@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.precision_at_k * 100) }}%</td></tr>
     <tr><td>Recall@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.recall_at_k * 100) }}%</td></tr>
     <tr><td>nDCG@{{ v.top_k }}</td><td>{{ "%.3f"|format(v.ndcg_at_k) }}</td></tr>
+    {% for c in v.model_comparison %}
+    <tr><td>{{ 'Best model' if loop.first else 'Alternative' }}: <code>{{ c.model }}</code></td><td>hit rate {{ "%.1f"|format(c.hit_rate * 100) }}%, MRR {{ "%.3f"|format(c.mrr) }}</td></tr>
+    {% endfor %}
     {% if v.has_baseline %}
     <tr><td>Dense-only baseline</td><td>hit rate {{ "%.1f"|format(v.baseline_hit_rate * 100) }}%, MRR {{ "%.3f"|format(v.baseline_mrr) }}</td></tr>
     {% endif %}

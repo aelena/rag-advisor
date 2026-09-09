@@ -197,6 +197,7 @@ ragadvisor run --no-interactive -d ./docs --use-case question_answering \
 - Ground truth is the same JSONL/CSV format as `ragadvisor evaluate`: `{"query": "...", "relevant_docs": ["file.txt"]}` per line.
 - If the top embedding recommendation is a hosted API, the best local alternative is evaluated instead and the report says so. If a model fails to load (missing extra package, gated repo), the next recommended local model is tried and the report lists what was skipped.
 - With no vector database installed, an exact numpy search (`--backend memory`) is used, so only `sentence-transformers` is strictly required.
+- `--validate-models 2` (or more) evaluates the top recommended local embedding models side by side and reports which one actually retrieves best on your queries.
 - Hybrid retrieval and a local reranker, when recommended, are part of what gets measured. The same index is also queried dense-only, so the report states whether those stages actually helped on your data.
 - Verdicts: **strong** (hit rate ≥ 80%), **acceptable** (≥ 60%), **weak**. Weak results come with suggestions: raise top-k, add a reranker, enable hybrid search, or compare strategies with `ragadvisor evaluate`.
 - The interactive flow offers validation as soon as you provide a ground-truth path.
@@ -236,6 +237,9 @@ ragadvisor evaluate ./docs ./queries.jsonl
 
 # Compare specific strategies
 ragadvisor evaluate ./docs ./queries.jsonl --strategy recursive --strategy semantic
+
+# Compare embedding models (models that fail to load are skipped, not fatal)
+ragadvisor evaluate ./docs ./queries.jsonl -m BAAI/bge-small-en-v1.5 -m BAAI/bge-base-en-v1.5
 
 # Use FAISS backend
 ragadvisor evaluate ./docs ./queries.jsonl --backend faiss
@@ -362,6 +366,7 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--queries-per-day N` | | Expected query volume for cost/capacity estimates (default: 1000) |
 | `--ground-truth-path PATH` | | Ground truth file (JSONL/CSV) for `--validate` |
 | `--validate / --no-validate` | | Run the recommended configuration against the ground truth and report metrics |
+| `--validate-models N` | | With `--validate`, compare the top N recommended local embedding models on your data |
 | `--format FORMAT` | `-f` | `markdown`, `html`, `yaml`, `all` (default: `all`) |
 | `--output DIR` | `-o` | Output directory (default: `./rag_report`) |
 | `--use-llm / --no-llm` | | Send recommendations to an LLM for verification |
@@ -370,7 +375,7 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--model NAME` | `-m` | Embedding model (default: `all-MiniLM-L6-v2`) |
+| `--model NAME` | `-m` | Embedding model(s) to compare, repeatable (default: `all-MiniLM-L6-v2`) |
 | `--strategy NAME` | `-s` | Chunking strategies to compare (repeatable) |
 | `--chunk-size N` | | Base chunk size in characters (default: 512) |
 | `--chunk-overlap N` | | Chunk overlap in characters (default: 50) |
