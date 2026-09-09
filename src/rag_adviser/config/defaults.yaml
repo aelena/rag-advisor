@@ -136,7 +136,7 @@ fallback_models:
     estimated_size_gb: 2.24
     multilingual: true
     license: mit
-    quality_score: 52.5
+    quality_score: 51.4
     tags: [multilingual, large, quality]
     notes: Strong multilingual retrieval across 100 languages
 
@@ -156,7 +156,7 @@ fallback_models:
     estimated_size_gb: 0.61
     multilingual: true
     license: apache-2.0
-    quality_score: 55.0
+    quality_score: 49.6
     trust_remote_code: true
     tags: [multilingual, long-context, quality]
     notes: Compact multilingual model with 8192-token inputs
@@ -167,7 +167,7 @@ fallback_models:
     estimated_size_gb: 2.29
     multilingual: true
     license: cc-by-nc-4.0
-    quality_score: 53.9
+    quality_score: 53.1
     trust_remote_code: true
     tags: [multilingual, long-context, matryoshka]
     notes: Task-specific LoRA adapters; non-commercial license unless purchased

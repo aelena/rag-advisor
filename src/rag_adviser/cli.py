@@ -645,6 +645,64 @@ def presets() -> None:
     console.print("\n[dim]Usage: ragadvisor run --preset <name>[/]")
 
 
+@app.command("refresh-catalogue")
+def refresh_catalogue_cmd(
+    write: Annotated[
+        bool,
+        typer.Option("--write/--dry-run",
+                     help="Rewrite quality_score values in defaults.yaml (default: dry run)"),
+    ] = False,
+    min_datasets: Annotated[
+        int,
+        typer.Option("--min-datasets",
+                     help="Minimum MTEB retrieval datasets a model card must report"),
+    ] = 10,
+    min_delta: Annotated[
+        float,
+        typer.Option("--min-delta", help="Ignore score changes smaller than this"),
+    ] = 0.5,
+) -> None:
+    """Refresh embedding-model quality scores from Hugging Face MTEB model cards.
+
+    Reads each curated model's card, averages the English MTEB retrieval
+    nDCG@10 results, and reports (or writes) the new quality_score values.
+    Hosted API models and rerankers are left for manual maintenance.
+    """
+    from rich.table import Table
+
+    from rag_adviser.catalogue_refresh import DEFAULTS_PATH, refresh_catalogue
+
+    console.print(f"\n[bold]Catalogue:[/] {DEFAULTS_PATH}")
+    console.print("[dim]Fetching model cards from the Hugging Face Hub...[/]\n")
+    report = refresh_catalogue(write=write, min_datasets=min_datasets, min_delta=min_delta)
+
+    table = Table(title="MTEB retrieval quality (nDCG@10, 0-100)", title_style="bold cyan")
+    table.add_column("Model", style="bold")
+    table.add_column("Old", justify="right")
+    table.add_column("New", justify="right")
+    table.add_column("Delta", justify="right")
+    table.add_column("Datasets", justify="right")
+    table.add_column("Status")
+    for r in report.results:
+        style = {"updated": "green", "insufficient_data": "yellow", "no_card": "yellow",
+                 "error": "red"}.get(r.status, "")
+        table.add_row(
+            r.model_id, f"{r.old_score:.1f}",
+            "-" if r.new_score is None else f"{r.new_score:.1f}",
+            "-" if r.delta is None else f"{r.delta:+.1f}",
+            str(r.datasets_used), f"{r.status} {r.detail}".strip(), style=style,
+        )
+    console.print(table)
+
+    if report.updated:
+        verb = "Updated" if report.written else "Would update"
+        console.print(f"\n[bold]{verb} {len(report.updated)} score(s).[/]")
+        if not report.written:
+            console.print("[dim]Re-run with --write to apply.[/]")
+    else:
+        console.print("\n[bold green]Catalogue is up to date.[/]")
+
+
 @app.command()
 def version() -> None:
     """Show ragadvisor version."""

@@ -1,0 +1,42 @@
+name: Refresh model catalogue
+
+# Recompute MTEB retrieval quality scores from Hugging Face model cards and
+# open a pull request when anything moved. Runs monthly and on demand.
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip && python -m pip install -e .
+      - name: Refresh quality scores
+        id: refresh
+        run: |
+          ragadvisor refresh-catalogue --write | tee refresh.log
+          if git diff --quiet -- src/rag_adviser/config/defaults.yaml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open pull request
+        if: steps.refresh.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/refresh-model-catalogue
+          title: "Refresh embedding model quality scores from MTEB model cards"
+          commit-message: "Refresh embedding model quality scores from MTEB model cards"
+          body-path: refresh.log
+          labels: catalogue
+          delete-branch: true

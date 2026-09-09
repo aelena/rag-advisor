@@ -396,6 +396,16 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--top-k N` | `-k` | Number of results to retrieve (default: 5) |
 | `--use-llm / --no-llm` | | Synthesize answers with an LLM |
 
+### `ragadvisor refresh-catalogue [--write]`
+
+Recomputes the embedding-model `quality_score` values in `defaults.yaml` from the MTEB results published in each model's Hugging Face model card (average English retrieval nDCG@10, CQADupstack subsets counted once). Dry run by default; `--write` rewrites only the score lines and keeps every comment. Models without a model-index (e.g. the older `sentence-transformers/*` checkpoints), hosted APIs and rerankers are reported but left for manual maintenance. A monthly GitHub Actions workflow runs it and opens a pull request when anything moved.
+
+| Flag | Description |
+|------|-------------|
+| `--write / --dry-run` | Apply changes (default: dry run) |
+| `--min-datasets N` | Retrieval datasets a card must report to be trusted (default: 10) |
+| `--min-delta X` | Ignore changes smaller than X points (default: 0.5) |
+
 ### `ragadvisor presets`
 
 Lists all available built-in and custom presets.
@@ -632,7 +642,7 @@ This is a heuristic advisor, not an evaluator. Be aware of what it does **not** 
 - **Corpus statistics are sampled.** 50 files, 5,000 characters each, extrapolated. Highly heterogeneous corpora (a few huge PDFs among thousands of notes) will be estimated poorly; the report states the sample size.
 - **Content-type detection is regex-based.** It works for clear-cut corpora and falls back to `mixed` when unsure. Override with `--content-type` when you know better.
 - **Similarity thresholds are model-dependent.** The suggested cosine thresholds (0.5–0.8) are starting points; calibrate them against your embedding model.
-- **Benchmark figures drift.** Model quality scores and API prices in `defaults.yaml` are snapshots; re-check leaderboards and vendor pricing pages.
+- **Benchmark figures drift.** Open-model quality scores can be refreshed with `ragadvisor refresh-catalogue`; API prices and reranker scores in `defaults.yaml` are manual snapshots.
 - **LLM verification is advisory.** The optional `--use-llm` review is a second opinion generated from the same inputs; it cannot inspect your documents.
 
 ## Configuration
