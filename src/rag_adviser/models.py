@@ -339,6 +339,35 @@ class LLMVerification:
 
 
 @dataclass
+class RerankerRecommendation:
+    """Recommended reranking stage.
+
+    ``enabled`` False with a non-empty ``model_id`` means "not needed now, but
+    this is what to reach for if precision turns out to be a problem".
+    """
+
+    enabled: bool = False
+    model_id: str = ""
+    provider: str = "huggingface"  # or "cohere", "voyage"
+    quality_score: float = 0.0
+    estimated_size_gb: float = 0.0
+    max_tokens: int = 512
+    multilingual: bool = False
+    license: str = "unknown"
+    trust_remote_code: bool = False
+    fetch_k: int = 20          # candidates retrieved before reranking
+    final_k: int = 5           # candidates kept after reranking
+    estimated_latency_ms: int = 0
+    score: float = 0.0
+    reasons: list[str] = field(default_factory=list)        # why rerank at all
+    model_reasons: list[str] = field(default_factory=list)  # why this model
+    warnings: list[str] = field(default_factory=list)
+    alternatives: list[dict] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    code_snippet: str = ""
+
+
+@dataclass
 class ValidationResult:
     """Outcome of running the recommended configuration against ground truth.
 
@@ -381,6 +410,7 @@ class Recommendations:
     vector_db: VectorDBRecommendation | None = None
     retrieval: RetrievalRecommendation | None = None
     query_transformation: QueryTransformationRecommendation | None = None
+    reranker: RerankerRecommendation | None = None
     llm_verification: LLMVerification | None = None
     validation: ValidationResult | None = None
     warnings: list[str] = field(default_factory=list)

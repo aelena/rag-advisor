@@ -286,6 +286,55 @@
 <hr>
 
 {# ── Query Pipeline ───────────────────────────────────────────────── #}
+{% if recommendations.reranker %}
+{% set rr = recommendations.reranker %}
+<h2>Reranking</h2>
+{% if not rr.enabled %}
+<p><strong>Not recommended for this profile.</strong></p>
+<ul>
+{% for n in rr.notes %}<li>{{ n }}</li>{% endfor %}
+{% for w in rr.warnings %}<li class="warning-box">{{ w }}</li>{% endfor %}
+</ul>
+{% else %}
+<div class="info-box">
+    <strong>Recommended:</strong> <code>{{ rr.model_id }}</code>
+    <span class="score-badge {% if rr.score >= 0.7 %}score-high{% elif rr.score >= 0.4 %}score-medium{% else %}score-low{% endif %}">
+        Score: {{ "%.2f"|format(rr.score) }}
+    </span>
+</div>
+<ul class="property-list">
+    <li><strong>Provider:</strong> {{ rr.provider }}</li>
+    <li><strong>Pipeline:</strong> retrieve top {{ rr.fetch_k }} &rarr; rerank &rarr; keep {{ rr.final_k }}</li>
+    <li><strong>Estimated latency:</strong> ~{{ rr.estimated_latency_ms }} ms</li>
+    <li><strong>Relative quality:</strong> ~{{ "%.0f"|format(rr.quality_score) }}/100 (approx.)</li>
+    <li><strong>Input window:</strong> {{ rr.max_tokens }} tokens</li>
+    <li><strong>Multilingual:</strong> {{ "Yes" if rr.multilingual else "No" }}</li>
+    <li><strong>License:</strong> {{ rr.license }}</li>
+</ul>
+{% if rr.reasons %}
+<h3>Why Rerank</h3>
+<ul>{% for r in rr.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+{% endif %}
+{% if rr.warnings %}
+<h3>Warnings</h3>
+{% for w in rr.warnings %}<div class="warning-box">{{ w }}</div>{% endfor %}
+{% endif %}
+{% if rr.alternatives %}
+<h3>Alternatives</h3>
+<table>
+    <tr><th>Model</th><th>Provider</th><th>Score</th><th>Quality</th><th>Latency</th></tr>
+    {% for a in rr.alternatives %}
+    <tr><td><code>{{ a.model_id }}</code></td><td>{{ a.provider }}</td><td>{{ "%.2f"|format(a.score) }}</td><td>~{{ "%.0f"|format(a.quality_score) }}</td><td>~{{ a.estimated_latency_ms }} ms</td></tr>
+    {% endfor %}
+</table>
+{% endif %}
+{% if rr.code_snippet %}
+<pre><code>{{ rr.code_snippet }}</code></pre>
+{% endif %}
+{% endif %}
+<hr>
+{% endif %}
+
 {% if recommendations.validation %}
 {% set v = recommendations.validation %}
 <h2>Validation Against Ground Truth</h2>

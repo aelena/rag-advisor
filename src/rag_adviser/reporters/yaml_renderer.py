@@ -159,6 +159,22 @@ class YamlRenderer:
                     "prompt_strategy": r.prompt_strategy,
                 }
 
+        # Reranking stage
+        if recs.reranker:
+            rr = recs.reranker
+            config["reranker"] = {
+                "enabled": rr.enabled,
+                "model": rr.model_id,
+                "provider": rr.provider,
+                "fetch_k": rr.fetch_k,
+                "final_k": rr.final_k,
+                "estimated_latency_ms": rr.estimated_latency_ms,
+                "max_tokens": rr.max_tokens,
+                "trust_remote_code": rr.trust_remote_code,
+            }
+            if rr.alternatives:
+                config["reranker"]["alternatives"] = [a["model_id"] for a in rr.alternatives]
+
         # Query transformation
         if recs.query_transformation and recs.query_transformation.techniques:
             qt = recs.query_transformation

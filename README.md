@@ -1,5 +1,13 @@
 # RAG Advisor
 
+[![CI](https://github.com/aelena/rag-advisor/actions/workflows/ci.yml/badge.svg)](https://github.com/aelena/rag-advisor/actions/workflows/ci.yml)
+[![Python 3.10 | 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.2.0-informational)](pyproject.toml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
+[![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
+
 **Rule-based recommendations for building Retrieval-Augmented Generation systems.**
 
 RAG Advisor is a CLI tool that analyzes your document corpus, collects your infrastructure constraints, and generates a complete RAG configuration — embedding model, chunking strategy, vector database, and retrieval settings — tailored to your exact requirements. No guesswork, no trial-and-error.
@@ -480,6 +488,23 @@ CJK languages get a 30% reduction in chunk size (character-density adjustment). 
 | Legal | 5 | 0.0 | 1000 | refine | 0.75 |
 
 Retrieval settings are further adjusted based on query complexity and expected answer type.
+
+### Reranking
+
+Reranking is decided and sized rather than switched on blindly. A cross-encoder stage is recommended when the evidence calls for precision: batch latency budgets, multi-hop, aggregative or comparative queries, hybrid fusion (a mixed candidate list needs consistent re-scoring), exact-passage answers, or legal/code use cases.
+
+The model is then chosen from a catalogue of 8 open cross-encoders and 2 hosted rerankers (Cohere `rerank-v3.5`, Voyage `rerank-2`) using:
+
+| Factor | Effect |
+|--------|--------|
+| **Latency** | Reranking gets ~150 ms of a <500 ms budget, ~800 ms of a <2 s budget, unlimited for batch. Cost = candidates × per-pair CPU cost (÷8 on GPU); models that do not fit are excluded |
+| **Quality** | Relative quality score (approx., from public BEIR/MIRACL-style results) |
+| **Languages** | Multilingual cross-encoder required for non-English or mixed corpora |
+| **Input window** | Must fit query + recommended chunk size, else a truncation warning |
+| **Hardware / privacy / budget** | fp32 size vs. memory limit; hosted rerankers only with `--budget paid_api` and non-strict privacy |
+| **License** | Non-commercial licenses flagged |
+
+The report states the pipeline shape (retrieve top N → rerank → keep K), the estimated latency, up to three alternatives, and a ready-to-run snippet. When reranking is not recommended, it still names the model to reach for if precision turns out to be a problem.
 
 ### Hybrid Retrieval (BM25 + dense)
 
