@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RAG Advisor answer file. Run with (XML comments cannot contain a double
+  hyphen, so the short flags are shown; -x is the same as the from-xml option):
+      ragadvisor run -x examples/answers.example.xml -f all -o ./rag_report
+
+  Every element is optional; anything omitted falls back to the tool's
+  defaults. Values use the same vocabulary as the CLI flags (see the run
+  command's help). Command-line flags passed together with -x override the
+  XML values.
+-->
+<ragadvisor>
+
+  <!-- Phase 1: what the corpus is -->
+  <document_discovery>
+    <!-- Directory or single file. Relative paths resolve from the working directory. -->
+    <document_path>./tests/fixtures/sample_docs</document_path>
+    <!-- Will more languages be added later? Forces a multilingual embedding model. -->
+    <future_languages>false</future_languages>
+    <!-- prose | code | legal | chat | tabular | scientific | mixed. Omit to auto-detect. -->
+    <content_type>prose</content_type>
+  </document_discovery>
+
+  <!-- Phase 2: how and where it will run -->
+  <use_case_constraints>
+    <!-- question_answering | semantic_search | summarization | code_assistance | legal_analysis -->
+    <use_case>question_answering</use_case>
+    <!-- cloud | on_prem | edge | local -->
+    <deployment>on_prem</deployment>
+    <!-- <500ms | <2s | batch  (escape "<" as &lt; in XML) -->
+    <latency>&lt;2s</latency>
+    <!-- cpu_only | gpu_available | limited_ram -->
+    <hardware>cpu_only</hardware>
+    <ram_gb>32</ram_gb>
+    <vram_gb>0</vram_gb>
+    <!-- free | paid_api | self_hosted -->
+    <budget>self_hosted</budget>
+    <!-- none | moderate | strict | air_gapped -->
+    <privacy>strict</privacy>
+    <embedding_provider>huggingface</embedding_provider>
+    <llm_provider>none</llm_provider>
+    <implementation_lang>python</implementation_lang>
+    <preferred_libraries>
+      <library>langchain</library>
+      <library>qdrant</library>
+    </preferred_libraries>
+  </use_case_constraints>
+
+  <!-- Phase 3: how it will be queried and operated -->
+  <query_patterns>
+    <!-- short_keywords | natural_questions | multi_turn -->
+    <query_type>natural_questions</query_type>
+    <!-- simple_factual | comparative | aggregative | multi_hop -->
+    <query_complexity>simple_factual</query_complexity>
+    <!-- exact_passage | synthesized | yes_no_with_evidence | list_enumeration -->
+    <expected_answer_type>exact_passage</expected_answer_type>
+    <sample_queries>
+      <query>What does chunk overlap do?</query>
+      <query>Which vector database runs inside PostgreSQL?</query>
+    </sample_queries>
+    <!-- never | weekly | daily | realtime -->
+    <update_frequency>weekly</update_frequency>
+    <!-- Drives the cost / capacity estimates -->
+    <expected_queries_per_day>2000</expected_queries_per_day>
+
+    <!-- Measurement: run the recommendation against your own queries.
+         ground_truth_path is a JSONL ({"query": ..., "relevant_docs": [...]}) or CSV file. -->
+    <ground_truth>false</ground_truth>
+    <ground_truth_path></ground_truth_path>
+    <!-- true requires document_path and ground_truth_path; needs `pip install ragadvisor[eval]` -->
+    <validate>false</validate>
+    <!-- Compare the top N recommended local embedding models during validation -->
+    <validate_models>1</validate_models>
+
+    <!-- Send the (recommendations, not documents) to an LLM for a second opinion -->
+    <use_llm_verification>false</use_llm_verification>
+  </query_patterns>
+
+</ragadvisor>

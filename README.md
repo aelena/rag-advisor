@@ -123,9 +123,13 @@ ragadvisor run --preset customer-support --no-interactive
 
 ### XML input mode
 
+For scripted or repeatable runs, put every answer in one file and version it next to your project:
+
 ```bash
-ragadvisor run --from-xml answers.xml
+ragadvisor run --from-xml examples/answers.example.xml -f all -o ./rag_report
 ```
+
+The schema mirrors the questionnaire in three sections: `document_discovery` (corpus path, content type, future languages), `use_case_constraints` (use case, deployment, latency, hardware, budget, privacy, preferred libraries) and `query_patterns` (query type and complexity, expected answer type, sample queries, update frequency, expected queries per day, ground truth path, `validate`, `validate_models`, LLM verification). Every element is optional. [`examples/answers.example.xml`](examples/answers.example.xml) is a fully commented template; flags passed alongside `--from-xml` override the file.
 
 ### Quick document analysis only
 

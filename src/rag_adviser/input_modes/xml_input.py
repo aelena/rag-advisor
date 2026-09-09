@@ -55,13 +55,27 @@ class XmlInputParser:
       </use_case_constraints>
       <query_patterns>
         <query_type>natural_questions</query_type>
+        <query_complexity>simple_factual</query_complexity>
+        <expected_answer_type>exact_passage</expected_answer_type>
+        <sample_queries>
+          <query>What is the refund policy?</query>
+        </sample_queries>
         <update_frequency>never</update_frequency>
+        <expected_queries_per_day>1000</expected_queries_per_day>
         <ground_truth>false</ground_truth>
         <ground_truth_path></ground_truth_path>
+        <validate>false</validate>
+        <validate_models>1</validate_models>
         <use_llm_verification>false</use_llm_verification>
       </query_patterns>
     </ragadvisor>
     ```
+
+    Every element is optional; missing values fall back to the dataclass
+    defaults. ``validate`` requires both ``document_path`` and
+    ``ground_truth_path``. Command-line flags given alongside ``--from-xml``
+    (``--validate``, ``--ground-truth-path``, ``--queries-per-day``,
+    ``--use-llm``) override the XML values.
     """
 
     def __init__(self, xml_path: Path) -> None:
@@ -278,6 +292,31 @@ class XmlInputParser:
         gt_path = self._get_text(el, "ground_truth_path")
         if gt_path:
             answers.ground_truth_path = Path(gt_path)
+            answers.has_ground_truth = True
+
+        qpd = self._get_text(el, "expected_queries_per_day")
+        if qpd:
+            answers.expected_queries_per_day = self._parse_non_negative_int(
+                qpd, "expected_queries_per_day"
+            )
+
+        validate = self._get_text(el, "validate")
+        if validate and self._parse_bool(validate):
+            if not answers.ground_truth_path:
+                raise InvalidInputError(
+                    "<validate>true</validate> requires <ground_truth_path> in query_patterns"
+                )
+            if not answers.document_path:
+                raise InvalidInputError(
+                    "<validate>true</validate> requires <document_path> in document_discovery"
+                )
+            answers.run_validation = True
+
+        validate_models = self._get_text(el, "validate_models")
+        if validate_models:
+            answers.validate_models = max(
+                self._parse_non_negative_int(validate_models, "validate_models"), 1
+            )
 
         use_llm = self._get_text(el, "use_llm_verification")
         if use_llm:
@@ -295,3 +334,14 @@ class XmlInputParser:
     def _parse_bool(value: str) -> bool:
         """Parse a boolean string."""
         return value.lower() in ("true", "yes", "1", "on")
+
+    @staticmethod
+    def _parse_non_negative_int(value: str, tag: str) -> int:
+        """Parse an integer element, rejecting negatives and non-numbers."""
+        try:
+            number = int(value.replace(",", "").replace("_", ""))
+        except ValueError as e:
+            raise InvalidInputError(f"Invalid {tag}: '{value}' is not an integer") from e
+        if number < 0:
+            raise InvalidInputError(f"Invalid {tag}: must be >= 0")
+        return number
