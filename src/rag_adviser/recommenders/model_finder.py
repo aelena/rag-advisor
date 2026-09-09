@@ -363,6 +363,10 @@ class HFModelFinder:
             multilingual=is_multilingual,
             provider=provider,
             trust_remote_code=trust_remote_code,
+            price_per_million_tokens=(
+                float(candidate["price_per_million_tokens"])
+                if candidate.get("price_per_million_tokens") is not None else None
+            ),
             quality_score=quality,
             score=score,
             reasons=reasons,

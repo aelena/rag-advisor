@@ -226,6 +226,29 @@ class YamlRenderer:
                 "additional_considerations": v.additional_considerations,
             }
 
+        # Cost / footprint / latency estimates
+        if recs.estimates:
+            e = recs.estimates
+            config["estimates"] = {
+                "corpus_tokens": e.corpus_tokens,
+                "corpus_tokens_estimated": e.corpus_tokens_estimated,
+                "chunk_count": e.chunk_count,
+                "tokens_to_embed": e.tokens_to_embed,
+                "index_size_mb": e.index_size_mb,
+                "index_memory_mb": e.index_memory_mb,
+                "indexing_cost_usd": e.indexing_cost_usd,
+                "indexing_time_min": e.indexing_time_min,
+                "monthly_reindex_cost_usd": e.monthly_reindex_cost_usd,
+                "queries_per_day": e.queries_per_day,
+                "monthly_query_cost_usd": e.monthly_query_cost_usd,
+                "query_latency_ms": e.query_latency_ms,
+                "query_latency_breakdown_ms": e.query_latency_breakdown_ms,
+                "latency_budget_ms": e.latency_budget_ms if e.latency_budget_ms < 10**9 else None,
+                "fits_latency_budget": e.fits_latency_budget,
+                "assumptions": e.assumptions,
+                "warnings": e.warnings,
+            }
+
         # Validation against ground truth
         if recs.validation:
             v = recs.validation

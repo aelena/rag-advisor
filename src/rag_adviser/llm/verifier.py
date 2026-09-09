@@ -179,6 +179,17 @@ class RecommendationVerifier:
             parts.append(f"### Query Pipeline: {techniques}")
             parts.append("")
 
+        if recs.estimates:
+            e = recs.estimates
+            parts.append("### Estimates")
+            parts.append(
+                f"chunks={e.chunk_count:,}, index~{e.index_size_mb:.0f}MB, "
+                f"retrieval latency~{e.query_latency_ms}ms "
+                f"({'fits' if e.fits_latency_budget else 'exceeds'} budget), "
+                f"monthly API~${e.monthly_query_cost_usd:.2f}"
+            )
+            parts.append("")
+
         if recs.modalities:
             parts.append("### Non-text modality plan")
             for m in recs.modalities:

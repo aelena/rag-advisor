@@ -48,6 +48,7 @@ class CliParamsCollector:
         update_frequency: str | None = None,
         has_ground_truth: bool | None = None,
         ground_truth_path: Path | None = None,
+        queries_per_day: int | None = None,
     ) -> UserAnswers:
         """Build UserAnswers from CLI options.
 
@@ -185,6 +186,11 @@ class CliParamsCollector:
 
         if has_ground_truth is not None:
             answers.has_ground_truth = has_ground_truth
+
+        if queries_per_day is not None:
+            if queries_per_day < 0:
+                raise InvalidInputError("--queries-per-day must be >= 0")
+            answers.expected_queries_per_day = queries_per_day
 
         if ground_truth_path is not None:
             if not ground_truth_path.exists():

@@ -158,6 +158,12 @@ ragadvisor presets
 
 At the end of the interactive questionnaire, you'll be asked if you want to save your answers as a custom preset. Custom presets are stored in `~/.ragadvisor/presets/` as YAML or JSON files.
 
+## Cost, Footprint & Latency Estimates
+
+Every report ends the recommendation with numbers you can plan against: chunk count and tokens to embed, index size on disk and vectors in RAM, one-off embedding cost (hosted APIs) or compute time (local models), monthly re-indexing cost from the update frequency, per-query retrieval latency broken down by stage (query embedding, vector search, BM25 fusion, reranking, LLM query transformations) checked against the latency budget, and monthly query-side API spend at the assumed volume (`--queries-per-day`, default 1,000).
+
+These are order-of-magnitude estimates built from public throughput and price figures; the assumptions are listed under the table. A retrieval stack that blows the latency budget raises a warning naming the heaviest stage.
+
 ## Multimodal Corpora
 
 Real corpora are rarely text only. The analyzer inventories every file it finds and the report gets a **Non-Text Modalities** section with an ingestion plan per kind:
@@ -353,6 +359,7 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--sample-query TEXT` | | Sample queries for tuning (repeatable) |
 | `--update-frequency FREQ` | | `never`, `weekly`, `daily`, `realtime` |
 | `--ground-truth / --no-ground-truth` | | Have evaluation data? |
+| `--queries-per-day N` | | Expected query volume for cost/capacity estimates (default: 1000) |
 | `--ground-truth-path PATH` | | Ground truth file (JSONL/CSV) for `--validate` |
 | `--validate / --no-validate` | | Run the recommended configuration against the ground truth and report metrics |
 | `--format FORMAT` | `-f` | `markdown`, `html`, `yaml`, `all` (default: `all`) |

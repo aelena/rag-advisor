@@ -24,6 +24,7 @@ from rag_adviser.models import (
     UserAnswers,
 )
 from rag_adviser.recommenders.chunking_recommender import ChunkingRecommender
+from rag_adviser.recommenders.cost_estimator import CostEstimator
 from rag_adviser.recommenders.hybrid_recommender import HybridRecommender
 from rag_adviser.recommenders.modality_recommender import ModalityRecommender
 from rag_adviser.recommenders.model_finder import HFModelFinder
@@ -235,6 +236,14 @@ class RAGAdviser:
             task = progress.add_task("Designing query pipeline...", total=None)
             query_rec = QueryRecommender()
             recommendations.query_transformation = query_rec.recommend(answers)
+            progress.remove_task(task)
+
+            # Step 8b: Cost, footprint and latency estimates
+            task = progress.add_task("Estimating cost and latency...", total=None)
+            recommendations.estimates = CostEstimator().estimate(answers, recommendations)
+            recommendations.warnings.extend(
+                f"LATENCY: {w}" for w in recommendations.estimates.warnings
+            )
             progress.remove_task(task)
 
             # Step 9: Implementation steps
@@ -594,6 +603,38 @@ class RAGAdviser:
 
         self.console.print(table)
         self.console.print()
+
+        # Estimates
+        if recs.estimates:
+            e = recs.estimates
+            colour = "green" if e.fits_latency_budget else "red"
+            budget_txt = e.latency_budget_ms if e.latency_budget_ms < 10**9 else "unlimited"
+            stages = "  ".join(
+                f"{k.replace('_', ' ')} {v}ms" for k, v in e.query_latency_breakdown_ms.items()
+            )
+            body = (
+                f"[bold]Retrieval latency:[/] [{colour}]~{e.query_latency_ms} ms[/] "
+                f"of {budget_txt} ms budget"
+                f"\n  {stages}\n"
+            )
+            if e.chunk_count:
+                approx = "~" if e.corpus_tokens_estimated else ""
+                body += (
+                    f"[bold]Index:[/] {approx}{e.chunk_count:,} chunks, "
+                    f"~{e.index_size_mb:,.0f} MB on disk, ~{e.index_memory_mb:,.0f} MB RAM\n"
+                    f"[bold]Indexing:[/] "
+                    + (f"~${e.indexing_cost_usd:,.2f} via API" if e.embedding_is_api
+                       else f"~{e.indexing_time_min:,.0f} min local compute")
+                    + "\n"
+                )
+            if e.monthly_query_cost_usd or e.monthly_reindex_cost_usd:
+                body += (
+                    f"[bold]Monthly API spend:[/] ~${e.monthly_query_cost_usd:,.2f} queries + "
+                    f"~${e.monthly_reindex_cost_usd:,.2f} re-indexing "
+                    f"({e.queries_per_day:,} queries/day)\n"
+                )
+            self.console.print(Panel(body.rstrip(), title="Estimates", border_style=colour))
+            self.console.print()
 
         # LLM verification
         if recs.llm_verification:
