@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=69.0", "setuptools-scm>=8.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ragadvisor"
-version = "0.2.0"
+version = "0.3.0"
 description = "RAG Configuration Adviser — rule-based recommendations for building RAG systems"
 readme = "README.md"
 license = "MIT"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["rag", "retrieval-augmented-generation", "cli", "advisor", "embeddings"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.10",
@@ -88,6 +88,7 @@ ragadvisor = "rag_adviser.cli:app"
 Homepage = "https://github.com/aelena/rag-advisor"
 Repository = "https://github.com/aelena/rag-advisor"
 Issues = "https://github.com/aelena/rag-advisor/issues"
+Changelog = "https://github.com/aelena/rag-advisor/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

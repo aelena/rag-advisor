@@ -527,6 +527,26 @@ class InteractiveFlow:
                         "(embeds your corpus locally; needs ragadvisor[eval])",
                         default=False,
                     )
+                if self.answers.run_validation:
+                    models_n = Prompt.ask(
+                        "How many of the recommended embedding models should be compared? (1-3)",
+                        default="1",
+                    )
+                    try:
+                        self.answers.validate_models = min(max(int(models_n), 1), 3)
+                    except ValueError:
+                        self.console.print("[dim]Not a number; comparing 1 model.[/]")
+                    sizes = Prompt.ask(
+                        "Extra chunk sizes to try, in tokens (comma-separated, Enter to skip)",
+                        default="",
+                    )
+                    if sizes.strip():
+                        try:
+                            self.answers.validate_chunk_sizes = sorted({
+                                int(s) for s in sizes.split(",") if s.strip()
+                            })
+                        except ValueError:
+                            self.console.print("[dim]Could not parse sizes; skipping the sweep.[/]")
 
         # LLM verification option
         self.console.print()
@@ -570,6 +590,13 @@ class InteractiveFlow:
                 table.add_row("Sample queries", "; ".join(self.answers.sample_queries))
             table.add_row("Update frequency", self.answers.update_frequency.value)
             table.add_row("Ground truth", "Yes" if self.answers.has_ground_truth else "No")
+            if self.answers.run_validation:
+                extras = f"{self.answers.validate_models} model(s)"
+                if self.answers.validate_chunk_sizes:
+                    sizes = ", ".join(str(s) for s in self.answers.validate_chunk_sizes)
+                    extras += f", chunk sizes {sizes}"
+                table.add_row("Validation", f"Yes ({extras})")
+            table.add_row("Queries per day", f"{self.answers.expected_queries_per_day:,}")
         else:
             table.add_row("Approach", "[yellow]Alternative (non-RAG) recommended[/]")
 
