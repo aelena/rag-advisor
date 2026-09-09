@@ -175,6 +175,15 @@ class DocumentStats:
     # total_files, avg/total token figures are extrapolated estimates.
     sampled_files: int = 0
     content_type_confidence: float = 0.0
+    # Everything found in the corpus, including non-text files. ``total_files``
+    # counts text-extractable documents only; ``modalities`` counts per kind
+    # ("document", "image", "video", "audio", "spreadsheet", "presentation",
+    # "cad", "other").
+    total_files_all: int = 0
+    modalities: dict[str, int] = field(default_factory=dict)
+    # PDFs sampled that had no extractable text layer (scans needing OCR).
+    sampled_pdfs: int = 0
+    scanned_pdfs: int = 0
 
 
 @dataclass
@@ -339,6 +348,27 @@ class LLMVerification:
 
 
 @dataclass
+class ModalityRecommendation:
+    """Ingestion advice for one non-text modality present in the corpus."""
+
+    # image | video | audio | spreadsheet | presentation | cad | scanned_pdf | other
+    modality: str = ""
+    file_count: int = 0
+    share: float = 0.0              # fraction of all files
+    extensions: list[str] = field(default_factory=list)
+    strategy: str = ""              # one-line headline
+    ingestion: list[str] = field(default_factory=list)
+    tools_local: list[str] = field(default_factory=list)
+    tools_hosted: list[str] = field(default_factory=list)
+    embedding: str = ""
+    chunking: str = ""
+    pip_packages: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    code_snippet: str = ""
+
+
+@dataclass
 class RerankerRecommendation:
     """Recommended reranking stage.
 
@@ -411,6 +441,7 @@ class Recommendations:
     retrieval: RetrievalRecommendation | None = None
     query_transformation: QueryTransformationRecommendation | None = None
     reranker: RerankerRecommendation | None = None
+    modalities: list[ModalityRecommendation] = field(default_factory=list)
     llm_verification: LLMVerification | None = None
     validation: ValidationResult | None = None
     warnings: list[str] = field(default_factory=list)

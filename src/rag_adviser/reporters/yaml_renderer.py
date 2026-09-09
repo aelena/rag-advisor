@@ -89,7 +89,31 @@ class YamlRenderer:
                 "has_cjk": stats.has_cjk,
                 "avg_tokens_per_doc": round(stats.avg_tokens_per_doc, 1),
                 "total_tokens": stats.total_tokens,
+                "sampled_files": stats.sampled_files,
+                "total_files_all_modalities": stats.total_files_all,
+                "modalities": dict(stats.modalities),
+                "scanned_pdfs_in_sample": stats.scanned_pdfs,
             }
+
+        # Non-text modalities
+        if recs.modalities:
+            config["modalities"] = [
+                {
+                    "modality": m.modality,
+                    "file_count": m.file_count,
+                    "share": round(m.share, 3),
+                    "extensions": m.extensions,
+                    "strategy": m.strategy,
+                    "ingestion": m.ingestion,
+                    "tools_local": m.tools_local,
+                    "tools_hosted": m.tools_hosted,
+                    "embedding": m.embedding,
+                    "chunking": m.chunking,
+                    "pip_packages": m.pip_packages,
+                    "warnings": m.warnings,
+                }
+                for m in recs.modalities
+            ]
 
         # Embedding model
         if recs.embedding_models:

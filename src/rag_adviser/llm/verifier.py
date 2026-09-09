@@ -110,6 +110,11 @@ class RecommendationVerifier:
             parts.append(
                 f"- Content type: {stats.detected_content_type.value}"
             )
+            non_text = {k: v for k, v in stats.modalities.items() if k != "document"}
+            if non_text:
+                parts.append(f"- Non-text files: {non_text}")
+            if stats.scanned_pdfs:
+                parts.append(f"- Scanned PDFs in sample: {stats.scanned_pdfs}/{stats.sampled_pdfs}")
 
         parts.append("\n## Recommendations\n")
 
@@ -172,6 +177,12 @@ class RecommendationVerifier:
                 t["name"] for t in recs.query_transformation.techniques
             )
             parts.append(f"### Query Pipeline: {techniques}")
+            parts.append("")
+
+        if recs.modalities:
+            parts.append("### Non-text modality plan")
+            for m in recs.modalities:
+                parts.append(f"- {m.modality} ({m.file_count} files): {m.strategy}")
             parts.append("")
 
         if recs.validation and recs.validation.ran:

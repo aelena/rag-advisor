@@ -25,6 +25,7 @@ from rag_adviser.models import (
 )
 from rag_adviser.recommenders.chunking_recommender import ChunkingRecommender
 from rag_adviser.recommenders.hybrid_recommender import HybridRecommender
+from rag_adviser.recommenders.modality_recommender import ModalityRecommender
 from rag_adviser.recommenders.model_finder import HFModelFinder
 from rag_adviser.recommenders.query_recommender import QueryRecommender
 from rag_adviser.recommenders.reranker_recommender import RerankerRecommender
@@ -58,6 +59,32 @@ class RAGAdviser:
                 task = progress.add_task("Analyzing document corpus...", total=None)
                 analyzer = DocumentAnalyzer()
                 answers.document_stats = analyzer.analyze(answers.document_path)
+                progress.remove_task(task)
+
+            # Step 1b: Non-text modalities (images, video, spreadsheets, CAD, scans)
+            stats = answers.document_stats
+            if stats and (
+                any(k != "document" for k in stats.modalities) or stats.scanned_pdfs > 0
+            ):
+                task = progress.add_task("Assessing non-text modalities...", total=None)
+                recommendations.modalities = ModalityRecommender().recommend(stats, answers)
+                non_text = sum(c for k, c in stats.modalities.items() if k != "document")
+                share = non_text / max(stats.total_files_all, 1)
+                if share >= 0.3:
+                    kinds = ", ".join(
+                        f"{c} {k}" for k, c in sorted(stats.modalities.items())
+                        if k != "document"
+                    )
+                    recommendations.warnings.append(
+                        f"MULTIMODAL CORPUS: {share:.0%} of files are not text documents "
+                        f"({kinds}). The text pipeline below covers only the documents; "
+                        f"see the Modalities section for the rest."
+                    )
+                if stats.scanned_pdfs > 0:
+                    recommendations.warnings.append(
+                        f"SCANNED PDFs: {stats.scanned_pdfs} of {stats.sampled_pdfs} sampled "
+                        f"PDFs have no text layer and need OCR before indexing."
+                    )
                 progress.remove_task(task)
 
             # Step 2: Approach assessment
@@ -430,6 +457,17 @@ class RAGAdviser:
         if recs.retrieval and recs.retrieval.hybrid_search and not recs.retrieval.hybrid_native:
             steps.append("pip install rank-bm25  # sparse retriever for hybrid search")
 
+        modality_pkgs: list[str] = []
+        for m in recs.modalities:
+            for pkg in m.pip_packages:
+                if pkg not in modality_pkgs:
+                    modality_pkgs.append(pkg)
+        if modality_pkgs:
+            steps.append(
+                f"pip install {' '.join(modality_pkgs)}  # ingestion for "
+                f"{', '.join(m.modality for m in recs.modalities)}"
+            )
+
         if recs.validation and recs.validation.ran:
             steps.append(
                 f"Validated: hit rate {recs.validation.hit_rate:.0%}, "
@@ -536,6 +574,13 @@ class RAGAdviser:
                     f"max_tokens={recs.retrieval.max_tokens}, "
                     f"strategy={recs.retrieval.prompt_strategy}",
                 )
+
+        if recs.modalities:
+            table.add_row(
+                "Modalities",
+                ", ".join(f"{m.file_count} {m.modality}" for m in recs.modalities),
+                "; ".join(m.strategy for m in recs.modalities[:2]),
+            )
 
         if recs.query_transformation and recs.query_transformation.techniques:
             techniques = ", ".join(

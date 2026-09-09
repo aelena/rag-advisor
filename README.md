@@ -158,6 +158,26 @@ ragadvisor presets
 
 At the end of the interactive questionnaire, you'll be asked if you want to save your answers as a custom preset. Custom presets are stored in `~/.ragadvisor/presets/` as YAML or JSON files.
 
+## Multimodal Corpora
+
+Real corpora are rarely text only. The analyzer inventories every file it finds and the report gets a **Non-Text Modalities** section with an ingestion plan per kind:
+
+| Modality | Detected from | Recommended treatment |
+|----------|---------------|------------------------|
+| Scanned PDFs | PDFs in the sample with no text layer | OCR + layout-aware parsing (docling, marker, PaddleOCR; Azure Document Intelligence / Textract hosted), chunk by section |
+| Images | `.png .jpg .tiff .webp .svg ...` | Caption with a vision-language model or OCR document-like images; optional CLIP/SigLIP image index; joint multimodal embeddings (Cohere embed-v4, Voyage multimodal) when APIs are allowed |
+| Spreadsheets | `.xlsx .xls .ods ...` | Fact tables to DuckDB/SQL + Text-to-SQL; small lookup tables serialized row-wise with headers |
+| Presentations | `.pptx .ppt .odp .key` | One chunk per slide (title + body + notes), captions for diagram slides |
+| Video | `.mp4 .mov .mkv ...` | Transcribe (faster-whisper), 30-60 s timestamped chunks, key-frame captions |
+| Audio | `.mp3 .wav .m4a ...` | Transcription + speaker diarization, speaker-turn chunks |
+| CAD / blueprints | `.dwg .dxf .ifc .rvt .step ...` | Structured metadata first (ezdxf, ifcopenshell), render sheets to images for captions, metadata filters over similarity |
+
+Hosted services are only proposed when privacy and budget allow; otherwise they are listed for reference and the plan stays local. When 30% or more of the files are not text, the report leads with a multimodal warning because the text pipeline covers only part of the corpus.
+
+## Use It From Claude Code
+
+The repository ships a project skill at `.claude/skills/rag-advisor/SKILL.md`. With this repo open in Claude Code, `/rag-advisor <folder>` runs `analyze`, maps your stated constraints to flags, runs the adviser, reads the generated report and explains the verdict, warnings and stack in plain language, offering `--validate` when you have ground-truth queries.
+
 ## Validate Before You Build
 
 `--validate` closes the loop between advice and measurement. It takes the recommended chunking strategy, chunk size, embedding model and top-k, runs them through the evaluation pipeline on **your** corpus and **your** queries, and attaches the retrieval metrics to the report with a verdict and concrete next steps.
