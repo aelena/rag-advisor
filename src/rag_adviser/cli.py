@@ -254,7 +254,7 @@ def run(
                 raise typer.Exit(1)
             answers.ground_truth_path = ground_truth_path
             answers.has_ground_truth = True
-        if validate:
+        if validate or answers.run_validation:
             if not answers.ground_truth_path:
                 console.print(
                     "[bold red]Error:[/] --validate needs a ground truth file "
@@ -265,7 +265,8 @@ def run(
                 console.print("[bold red]Error:[/] --validate needs a corpus (--document-path)")
                 raise typer.Exit(1)
             answers.run_validation = True
-            answers.validate_models = max(validate_models, 1)
+            if validate_models != 1 or not answers.validate_models:
+                answers.validate_models = max(validate_models, 1)
 
         # Parse output format
         try:
