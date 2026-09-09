@@ -14,7 +14,7 @@ The user's query and the relevant documents often exist in different semantic sp
 - Original: "RAG chunking best practices"
 - Expanded: "What are the best practices for chunking documents in a Retrieval-Augmented Generation system?"
 
-**Implementation**: LangChain MultiQueryRetriever generates 3 query variants by default, retrieves for each, and merges results via union.
+**Implementation**: Prompt the LLM for 3 query variants (an LCEL chain `prompt | llm | StrOutputParser()`), retrieve for each, and merge with reciprocal rank fusion. LangChain's legacy `MultiQueryRetriever` did the same with a plain union.
 
 **When to use**: Short keyword queries, search-box-style interfaces.
 
@@ -52,7 +52,7 @@ The user's query and the relevant documents often exist in different semantic sp
   2. "What are the advantages of Qdrant for production?"
   3. "ChromaDB vs Qdrant feature comparison"
 
-**Implementation**: LangChain MultiQueryRetriever with custom decomposition prompt.
+**Implementation**: LCEL chain with a decomposition prompt that emits one sub-question per line; retrieve per sub-question and fuse results.
 
 **When to use**: Comparative queries, multi-hop reasoning, complex analytical questions.
 
@@ -84,7 +84,7 @@ The user's query and the relevant documents often exist in different semantic sp
 - History: "Tell me about ChromaDB" → "Is it open source?" → "What about pricing?"
 - Condensed: "What is the pricing model for ChromaDB?"
 
-**Implementation**: LangChain ConversationalRetrievalChain with `condense_question_prompt`.
+**Implementation**: An LCEL condense chain that rewrites (history, latest message) into a standalone question before retrieval. This replaces the deprecated `ConversationalRetrievalChain`.
 
 **When to use**: Any multi-turn interface (chatbots, assistants).
 
