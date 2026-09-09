@@ -61,6 +61,11 @@ class EvalConfig:
     top_k: int = 5
     chunk_size: int = 512
     chunk_overlap: int = 50
+    # Chunk-size sweep: evaluate every strategy at each size (characters).
+    # Empty -> [chunk_size]. When sweeping, overlap = size * overlap_ratio
+    # unless overlap_ratio is None (then chunk_overlap is used for every size).
+    chunk_sizes: list[int] = field(default_factory=list)
+    overlap_ratio: float | None = 0.1
     vector_backend: str = "chroma"
     db_connection: str | None = None
     output_dir: Path = field(default_factory=lambda: Path("./eval_results"))
@@ -84,6 +89,7 @@ class EvalReport:
     strategy_results: list[EvalMetrics] = field(default_factory=list)
     best_strategy: str = ""
     best_model: str = ""
+    best_chunk_size: int = 0
     embedding_model: str = ""
     embedding_models: list[str] = field(default_factory=list)
     model_errors: dict[str, str] = field(default_factory=dict)
@@ -105,6 +111,8 @@ class EvalPipelineRunner:
         """
         models = list(config.embedding_models) or [config.embedding_model]
         multi = len(models) > 1
+        sizes = list(config.chunk_sizes) or [config.chunk_size]
+        sweep = len(sizes) > 1
         report = EvalReport(config=config, embedding_model=models[0], embedding_models=models)
 
         with Progress(
@@ -173,17 +181,19 @@ class EvalPipelineRunner:
                 progress.update(task, completed=1)
                 self.console.print(f"  Model: {model_id} (dim={self._dimension})")
 
-                total_strategies = len(config.strategies)
-                for strat_idx, strategy_name in enumerate(config.strategies):
-                    label = self._label(strategy_name, model_id, multi)
+                combos = [(s, size) for s in config.strategies for size in sizes]
+                for combo_idx, (strategy_name, size) in enumerate(combos):
+                    overlap = self._overlap_for(size, config)
+                    label = self._label(strategy_name, model_id, multi, size, sweep)
                     self.console.print(
-                        f"\n[bold cyan]Strategy {strat_idx + 1}/{total_strategies}: "
-                        f"{label}[/]"
+                        f"\n[bold cyan]Run {combo_idx + 1}/{len(combos)}: {label}[/]"
                     )
 
                     # 4a: Chunk
-                    task = progress.add_task(f"  Chunking ({strategy_name})...", total=1)
-                    chunked = self._apply_strategy(strategy_name, documents, config)
+                    task = progress.add_task(f"  Chunking ({strategy_name} @ {size})...", total=1)
+                    chunked = self._apply_strategy(
+                        strategy_name, documents, config, chunk_size=size, chunk_overlap=overlap
+                    )
                     progress.update(task, completed=1)
                     self.console.print(f"  Produced {chunked.total_chunks} chunks")
 
@@ -237,6 +247,8 @@ class EvalPipelineRunner:
                             fetch_k=config.fetch_k,
                         )
                         metrics.embedding_model = model_id
+                        metrics.chunk_size = size
+                        metrics.chunk_overlap = overlap
                         report.strategy_results.append(metrics)
                         self.console.print(
                             f"  [green]{metrics.retrieval_mode}: "
@@ -254,17 +266,32 @@ class EvalPipelineRunner:
                 + "; ".join(f"{m}: {e}" for m, e in report.model_errors.items())
             )
 
-        # Best configuration across models and strategies (by MRR)
+        # Best configuration across models, strategies and sizes (by MRR)
         if report.strategy_results:
             best = max(report.strategy_results, key=lambda m: m.mrr)
             report.best_strategy = best.strategy_name
             report.best_model = best.embedding_model
+            report.best_chunk_size = best.chunk_size
         return report
 
     @staticmethod
-    def _label(strategy_name: str, model_id: str, multi: bool) -> str:
-        """Result label; includes the model when several are compared."""
-        return f"{strategy_name} [{model_id.split('/')[-1]}]" if multi else strategy_name
+    def _label(
+        strategy_name: str, model_id: str, multi: bool, size: int = 0, sweep: bool = False
+    ) -> str:
+        """Result label; includes the model and/or chunk size when several are compared."""
+        label = strategy_name
+        if sweep:
+            label += f" @{size}"
+        if multi:
+            label += f" [{model_id.split('/')[-1]}]"
+        return label
+
+    @staticmethod
+    def _overlap_for(size: int, config: EvalConfig) -> int:
+        """Overlap for a given chunk size: proportional when sweeping, else as configured."""
+        if len(config.chunk_sizes) > 1 and config.overlap_ratio is not None:
+            return int(size * config.overlap_ratio)
+        return config.chunk_overlap
 
     def _load_embedding_model(self, model_id: str, trust_remote_code: bool = False) -> None:
         """Load the sentence-transformers model."""
@@ -315,35 +342,31 @@ class EvalPipelineRunner:
         strategy_name: str,
         documents: list[tuple[str, str]],
         config: EvalConfig,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
     ) -> ChunkedCorpus:
-        """Apply a named chunking strategy to the documents."""
+        """Apply a named chunking strategy to the documents at the given size."""
+        size = chunk_size if chunk_size is not None else config.chunk_size
+        overlap = chunk_overlap if chunk_overlap is not None else config.chunk_overlap
         if strategy_name == "recursive":
-            return chunk_recursive(
-                documents,
-                chunk_size=config.chunk_size,
-                chunk_overlap=config.chunk_overlap,
-            )
+            return chunk_recursive(documents, chunk_size=size, chunk_overlap=overlap)
         elif strategy_name == "semantic":
             return chunk_semantic(
                 documents,
                 embedding_fn=self._embed_texts,
                 threshold=0.5,
                 min_chunk_size=100,
-                max_chunk_size=config.chunk_size * 3,
+                max_chunk_size=size * 3,
             )
         elif strategy_name == "hierarchical":
             return chunk_hierarchical(
                 documents,
-                parent_size=config.chunk_size * 2,
-                child_size=config.chunk_size // 2,
-                child_overlap=config.chunk_overlap // 2,
+                parent_size=size * 2,
+                child_size=size // 2,
+                child_overlap=overlap // 2,
             )
         elif strategy_name == "adaptive":
-            return chunk_per_file_adaptive(
-                documents,
-                chunk_size=config.chunk_size,
-                chunk_overlap=config.chunk_overlap,
-            )
+            return chunk_per_file_adaptive(documents, chunk_size=size, chunk_overlap=overlap)
         else:
             raise EvalPipelineError(f"Unknown chunking strategy: {strategy_name}")
 
@@ -421,7 +444,10 @@ def display_comparison_table(
         show_header=True,
         title_style="bold cyan",
     )
+    sweep = len(report.config.chunk_sizes) > 1
     table.add_column("Strategy", style="bold")
+    if sweep:
+        table.add_column("Size", justify="right")
     if multi:
         table.add_column("Model")
     table.add_column("Mode")
@@ -438,6 +464,8 @@ def display_comparison_table(
         marker = " *" if is_best else ""
 
         row = [f"{metrics.strategy_name}{marker}"]
+        if sweep:
+            row.append(str(metrics.chunk_size))
         if multi:
             row.append(metrics.embedding_model.split("/")[-1])
         row += [
@@ -454,6 +482,8 @@ def display_comparison_table(
     console.print()
     console.print(table)
     console.print(f"\n[bold green]* Best strategy:[/] {report.best_strategy} (by MRR)")
+    if sweep:
+        console.print(f"[bold green]* Best chunk size:[/] {report.best_chunk_size} characters")
     for model_id, err in report.model_errors.items():
         console.print(f"[yellow]Skipped {model_id}: {err[:120]}[/]")
     console.print(
@@ -482,7 +512,14 @@ def generate_eval_report_markdown(report: EvalReport, output_dir: Path) -> Path:
     for model_id, err in report.model_errors.items():
         lines.append(f"**Skipped:** `{model_id}` ({err[:120]})  ")
     lines.append(f"**Vector Backend:** {report.config.vector_backend}  ")
-    lines.append(f"**Chunk Size:** {report.config.chunk_size}  ")
+    if len(report.config.chunk_sizes) > 1:
+        lines.append(
+            "**Chunk Sizes (sweep):** "
+            + ", ".join(str(s) for s in report.config.chunk_sizes)
+            + f" characters (best: {report.best_chunk_size})  "
+        )
+    else:
+        lines.append(f"**Chunk Size:** {report.config.chunk_size}  ")
     lines.append(f"**Top-K:** {k}  ")
     lines.append(
         f"**Retrieval mode:** {mode_label(report.config.hybrid, bool(report.config.rerank_model))}"
@@ -500,21 +537,53 @@ def generate_eval_report_markdown(report: EvalReport, output_dir: Path) -> Path:
     lines.append("## Strategy Comparison")
     lines.append("")
     lines.append(
-        f"| Strategy | Mode | Chunks | Hit Rate@{k} | MRR | Precision@{k} | Recall@{k} | NDCG@{k} |"
+        f"| Strategy | Size | Mode | Chunks | Hit Rate@{k} | MRR | Precision@{k} | "
+        f"Recall@{k} | NDCG@{k} |"
     )
-    lines.append("|----------|------|--------|------------|-----|-------------|-----------|---------|")
+    lines.append(
+        "|----------|------|------|--------|------------|-----|-------------|-----------|---------|"
+    )
 
     for m in report.strategy_results:
         best = " **" if m.strategy_name == report.best_strategy else ""
         end = "**" if best else ""
         lines.append(
-            f"| {best}{m.strategy_name}{end} | {m.retrieval_mode} | {m.num_chunks} | "
+            f"| {best}{m.strategy_name}{end} | {m.chunk_size} | {m.retrieval_mode} | "
+            f"{m.num_chunks} | "
             f"{m.hit_rate:.1%} | {m.mrr:.3f} | {m.mean_precision_at_k:.1%} | "
             f"{m.mean_recall_at_k:.1%} | {m.mean_ndcg_at_k:.3f} |"
         )
 
     lines.append("")
     lines.append(f"**Best strategy:** {report.best_strategy} (by MRR)")
+    if len(report.config.chunk_sizes) > 1:
+        lines.append("")
+        lines.append("### Chunk-size sweep (MRR by size, primary retrieval mode)")
+        lines.append("")
+        sizes = list(report.config.chunk_sizes)
+        lines.append("| Strategy | " + " | ".join(str(s) for s in sizes) + " |")
+        lines.append("|----------|" + "|".join("------" for _ in sizes) + "|")
+        primary = [
+            m for m in report.strategy_results
+            if not m.strategy_name.endswith("(dense baseline)")
+        ]
+        groups: dict[str, dict[int, float]] = {}
+        for m in primary:
+            base = m.strategy_name.split(" @")[0]
+            multi_model = len(report.embedding_models) > 1
+            short = m.embedding_model.split("/")[-1]
+            key = base + (f" [{short}]" if multi_model and short else "")
+            groups.setdefault(key, {})[m.chunk_size] = m.mrr
+        for key, by_size in groups.items():
+            best_size = max(by_size, key=by_size.get) if by_size else None
+            cells = []
+            for s in sizes:
+                v = by_size.get(s)
+                cell = "-" if v is None else f"{v:.3f}"
+                cells.append(f"**{cell}**" if s == best_size and v is not None else cell)
+            lines.append(f"| {key} | " + " | ".join(cells) + " |")
+        lines.append("")
+        lines.append(f"**Best chunk size:** {report.best_chunk_size} characters")
     lines.append("")
     lines.append("---")
     lines.append("")

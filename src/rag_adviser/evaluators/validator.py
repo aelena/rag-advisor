@@ -88,6 +88,10 @@ class RecommendationValidator:
         factor = _CHARS_PER_TOKEN if chunking.count_by == "tokens" else 1
         result.chunk_size_chars = max(chunking.chunk_size * factor, 100)
         result.chunk_overlap_chars = chunking.chunk_overlap * factor
+        result.recommended_chunk_size_tokens = chunking.chunk_size
+        # Optional sweep: recommended size plus any extra sizes the user asked for.
+        sweep_tokens = sorted({chunking.chunk_size, *answers.validate_chunk_sizes})
+        sweep_chars = [max(t * factor, 100) for t in sweep_tokens]
         result.top_k = recs.retrieval.top_k if recs.retrieval else 5
         result.vector_backend = self._pick_backend()
 
@@ -126,6 +130,8 @@ class RecommendationValidator:
             top_k=result.top_k,
             chunk_size=result.chunk_size_chars,
             chunk_overlap=result.chunk_overlap_chars,
+            chunk_sizes=sweep_chars,
+            overlap_ratio=(chunking.chunk_overlap / max(chunking.chunk_size, 1)),
             vector_backend=result.vector_backend,
             hybrid=hybrid,
             rerank_model=rerank_model,
@@ -162,6 +168,43 @@ class RecommendationValidator:
             result.error = "evaluation produced no results"
             return result
 
+        # Chunk-size sweep: compare sizes for the recommended (first) model, then
+        # narrow the primary results to the winning size for the model comparison.
+        if len(sweep_chars) > 1:
+            first_model = next((r.embedding_model for r in primary), "")
+            by_size = [r for r in primary if r.embedding_model == first_model]
+            by_size.sort(key=lambda r: (r.mrr, r.hit_rate), reverse=True)
+            result.chunk_size_comparison = [
+                {
+                    "chunk_size_tokens": round(r.chunk_size / factor),
+                    "chunk_size_chars": r.chunk_size,
+                    "hit_rate": round(r.hit_rate, 4),
+                    "mrr": round(r.mrr, 4),
+                }
+                for r in by_size
+            ]
+            if by_size:
+                best_chars = by_size[0].chunk_size
+                result.best_chunk_size_tokens = round(best_chars / factor)
+                result.chunk_size_chars = best_chars
+                primary = [r for r in primary if r.chunk_size == best_chars]
+                if result.best_chunk_size_tokens != chunking.chunk_size:
+                    rec_row = next(
+                        (c for c in result.chunk_size_comparison
+                         if c["chunk_size_tokens"] == chunking.chunk_size), None,
+                    )
+                    rec_txt = f" vs {rec_row['mrr']:.3f}" if rec_row else ""
+                    result.suggestions.append(
+                        f"Chunk size {result.best_chunk_size_tokens} tokens beat the "
+                        f"recommended {chunking.chunk_size} on your data "
+                        f"(MRR {by_size[0].mrr:.3f}{rec_txt}); consider switching"
+                    )
+                else:
+                    result.notes.append(
+                        f"Recommended chunk size ({chunking.chunk_size} tokens) was the "
+                        f"best of {len(by_size)} sizes tried"
+                    )
+
         # Best model by MRR (then hit rate); the others go into the comparison table.
         primary.sort(key=lambda r: (r.mrr, r.hit_rate), reverse=True)
         m = primary[0]
@@ -187,6 +230,7 @@ class RecommendationValidator:
                 r for r in report.strategy_results
                 if r.strategy_name.endswith("(dense baseline)")
                 and r.embedding_model == m.embedding_model
+                and r.chunk_size == m.chunk_size
             ),
             None,
         )
@@ -202,7 +246,9 @@ class RecommendationValidator:
         result.precision_at_k = m.mean_precision_at_k
         result.recall_at_k = m.mean_recall_at_k
         result.ndcg_at_k = m.mean_ndcg_at_k
-        result.verdict, result.suggestions = self._interpret(result, recs)
+        verdict, more = self._interpret(result, recs)
+        result.verdict = verdict
+        result.suggestions = more + result.suggestions
         return result
 
     # ── Helpers ────────────────────────────────────────────────────────────

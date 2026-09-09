@@ -619,6 +619,18 @@ class MarkdownRenderer:
                 f"MRR {v.baseline_mrr:.3f} |"
             )
         lines.append("")
+        if v.chunk_size_comparison:
+            lines.append("**Chunk sizes compared on your data (best first):**")
+            lines.append("")
+            lines.append("| Chunk size (tokens) | Hit Rate | MRR |")
+            lines.append("|---------------------|----------|-----|")
+            for c in v.chunk_size_comparison:
+                recommended = c["chunk_size_tokens"] == v.recommended_chunk_size_tokens
+                mark = " (recommended)" if recommended else ""
+                lines.append(
+                    f"| {c['chunk_size_tokens']}{mark} | {c['hit_rate']:.1%} | {c['mrr']:.3f} |"
+                )
+            lines.append("")
         if v.model_comparison:
             lines.append("**Embedding models compared on your data (best first):**")
             lines.append("")
