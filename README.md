@@ -191,6 +191,7 @@ ragadvisor run --no-interactive -d ./docs --use-case question_answering \
 - Ground truth is the same JSONL/CSV format as `ragadvisor evaluate`: `{"query": "...", "relevant_docs": ["file.txt"]}` per line.
 - If the top embedding recommendation is a hosted API, the best local alternative is evaluated instead and the report says so. If a model fails to load (missing extra package, gated repo), the next recommended local model is tried and the report lists what was skipped.
 - With no vector database installed, an exact numpy search (`--backend memory`) is used, so only `sentence-transformers` is strictly required.
+- Hybrid retrieval and a local reranker, when recommended, are part of what gets measured. The same index is also queried dense-only, so the report states whether those stages actually helped on your data.
 - Verdicts: **strong** (hit rate ≥ 80%), **acceptable** (≥ 60%), **weak**. Weak results come with suggestions: raise top-k, add a reranker, enable hybrid search, or compare strategies with `ragadvisor evaluate`.
 - The interactive flow offers validation as soon as you provide a ground-truth path.
 
@@ -253,6 +254,14 @@ ragadvisor evaluate ./docs ./queries.jsonl --backend pgvector --db-connection "p
 - **semantic** — Embedding-based boundary detection (splits at topic changes)
 - **hierarchical** — Parent-child chunks (index children, return parents)
 - **adaptive** — Per-file strategy selection (detects code/markdown/prose)
+
+### Retrieval modes
+
+Every strategy can be evaluated as plain dense retrieval, **hybrid** (a dependency-free BM25 index fused with the dense results by reciprocal rank fusion), **dense + rerank** (a sentence-transformers cross-encoder over the top `--fetch-k` candidates), or **hybrid + rerank**. With `--dense-baseline` (default) the dense-only numbers for the same index are reported alongside, so the value of each stage is visible.
+
+```bash
+ragadvisor evaluate ./docs ./queries.jsonl --hybrid --rerank cross-encoder/ms-marco-MiniLM-L-6-v2
+```
 
 ### Vector backends
 
@@ -361,6 +370,11 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--top-k N` | `-k` | Results to retrieve per query (default: 5) |
 | `--backend NAME` | `-b` | Vector backend: `chroma`, `faiss`, `pgvector`, `sqlite` |
 | `--db-connection STR` | | Connection string for pgvector or sqlite |
+| `--hybrid / --no-hybrid` | | Fuse BM25 with dense results (reciprocal rank fusion) |
+| `--rerank MODEL` | | Cross-encoder to rerank fetched candidates |
+| `--fetch-k N` | | Candidates fetched before fusion/reranking (default: 20) |
+| `--dense-baseline / --no-dense-baseline` | | Also evaluate dense-only on the same index (default: on) |
+| `--trust-remote-code` | | Allow models that ship custom code |
 | `--baseline PATH` | | Compare against baseline JSON (CI mode) |
 | `--save-baseline PATH` | | Save current results as baseline JSON |
 | `--regression-threshold N` | | Metric drop threshold for regression (default: 0.02) |

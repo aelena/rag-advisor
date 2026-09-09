@@ -24,6 +24,12 @@ from rag_adviser.evaluators.metrics import (
     compute_metrics,
     evaluate_single_query,
 )
+from rag_adviser.evaluators.retrieval_modes import (
+    BM25Index,
+    CrossEncoderReranker,
+    mode_label,
+    rrf_fuse,
+)
 from rag_adviser.evaluators.vector_store import BaseVectorStore, create_vector_store
 from rag_adviser.models import RagAdvisorError
 
@@ -51,6 +57,15 @@ class EvalConfig:
     vector_backend: str = "chroma"
     db_connection: str | None = None
     output_dir: Path = field(default_factory=lambda: Path("./eval_results"))
+    # Retrieval mode. hybrid = BM25 + dense fused with RRF; rerank_model = a
+    # sentence-transformers CrossEncoder applied to the fetch_k candidates.
+    hybrid: bool = False
+    rerank_model: str | None = None
+    rerank_trust_remote_code: bool = False
+    fetch_k: int = 20
+    # Also evaluate plain dense retrieval on the same index for comparison
+    # (only meaningful when hybrid or rerank_model is set).
+    dense_baseline: bool = False
 
 
 @dataclass
@@ -113,6 +128,18 @@ class EvalPipelineRunner:
                 f"  Model: {config.embedding_model} (dim={self._dimension})"
             )
 
+            # Step 3b: Optional reranker
+            reranker: CrossEncoderReranker | None = None
+            if config.rerank_model:
+                task = progress.add_task("Loading reranker...", total=1)
+                reranker = CrossEncoderReranker(
+                    config.rerank_model, trust_remote_code=config.rerank_trust_remote_code
+                )
+                progress.update(task, completed=1)
+                self.console.print(f"  Reranker: {config.rerank_model}")
+            mode = mode_label(config.hybrid, reranker is not None)
+            self.console.print(f"  Retrieval mode: {mode}")
+
             # Step 4: Apply chunking strategies and evaluate each
             total_strategies = len(config.strategies)
             for strat_idx, strategy_name in enumerate(config.strategies):
@@ -156,30 +183,43 @@ class EvalPipelineRunner:
                     f"  Indexed {store.count()} chunks in {config.vector_backend}"
                 )
 
-                # 4d: Query and evaluate
-                task = progress.add_task(
-                    f"  Evaluating {report.ground_truth.query_count} queries...",
-                    total=report.ground_truth.query_count,
-                )
-                metrics = self._evaluate_strategy(
-                    store=store,
-                    ground_truth=report.ground_truth,
-                    strategy_name=strategy_name,
-                    top_k=config.top_k,
-                    num_chunks=chunked.total_chunks,
-                    progress=progress,
-                    task_id=task,
-                )
-                report.strategy_results.append(metrics)
+                # 4d: Query and evaluate in the configured mode, then (optionally)
+                # plain dense retrieval on the same index as a baseline.
+                bm25 = BM25Index(chunked.chunks) if config.hybrid else None
+                runs: list[tuple[str, BM25Index | None, CrossEncoderReranker | None]] = [
+                    (strategy_name, bm25, reranker)
+                ]
+                if config.dense_baseline and (bm25 is not None or reranker is not None):
+                    runs.append((f"{strategy_name} (dense baseline)", None, None))
+
+                for label, run_bm25, run_reranker in runs:
+                    task = progress.add_task(
+                        f"  Evaluating {report.ground_truth.query_count} queries "
+                        f"[{mode_label(run_bm25 is not None, run_reranker is not None)}]...",
+                        total=report.ground_truth.query_count,
+                    )
+                    metrics = self._evaluate_strategy(
+                        store=store,
+                        ground_truth=report.ground_truth,
+                        strategy_name=label,
+                        top_k=config.top_k,
+                        num_chunks=chunked.total_chunks,
+                        progress=progress,
+                        task_id=task,
+                        bm25=run_bm25,
+                        reranker=run_reranker,
+                        fetch_k=config.fetch_k,
+                    )
+                    report.strategy_results.append(metrics)
+                    self.console.print(
+                        f"  [green]{metrics.retrieval_mode}: "
+                        f"Hit Rate: {metrics.hit_rate:.1%} | "
+                        f"MRR: {metrics.mrr:.3f} | "
+                        f"Recall@{config.top_k}: {metrics.mean_recall_at_k:.1%}[/]"
+                    )
 
                 # Clean up
                 store.delete_collection()
-
-                self.console.print(
-                    f"  [green]Hit Rate: {metrics.hit_rate:.1%} | "
-                    f"MRR: {metrics.mrr:.3f} | "
-                    f"Recall@{config.top_k}: {metrics.mean_recall_at_k:.1%}[/]"
-                )
 
         # Determine best strategy
         if report.strategy_results:
@@ -278,16 +318,32 @@ class EvalPipelineRunner:
         num_chunks: int,
         progress: Progress,
         task_id: int,
+        bm25: BM25Index | None = None,
+        reranker: CrossEncoderReranker | None = None,
+        fetch_k: int = 20,
     ) -> EvalMetrics:
-        """Run all ground truth queries against the indexed store."""
+        """Run all ground truth queries against the indexed store.
+
+        ``bm25`` enables hybrid retrieval (RRF fusion with the dense results);
+        ``reranker`` re-scores the ``fetch_k`` candidates and keeps ``top_k``.
+        """
         query_results = []
+        # Fetch more than top_k when a later stage narrows the list.
+        candidate_k = max(fetch_k, top_k) if (bm25 is not None or reranker is not None) else top_k
 
         for i, entry in enumerate(ground_truth.entries):
             # Embed the query
             query_emb = self._embed_texts([entry.query])[0]
 
-            # Search
-            search_results = store.search(query_emb, top_k=top_k)
+            # Search (dense, optionally fused with BM25, optionally reranked)
+            search_results = store.search(query_emb, top_k=candidate_k)
+            if bm25 is not None:
+                sparse = bm25.search(entry.query, top_k=candidate_k)
+                search_results = rrf_fuse([search_results, sparse], top_k=candidate_k)
+            if reranker is not None:
+                search_results = reranker.rerank(entry.query, search_results, top_k=top_k)
+            else:
+                search_results = search_results[:top_k]
 
             # Evaluate
             result = evaluate_single_query(
@@ -302,7 +358,12 @@ class EvalPipelineRunner:
             query_results.append(result)
             progress.update(task_id, completed=i + 1)
 
-        return compute_metrics(query_results, strategy_name, num_chunks)
+        return compute_metrics(
+            query_results,
+            strategy_name,
+            num_chunks,
+            retrieval_mode=mode_label(bm25 is not None, reranker is not None),
+        )
 
 
 def display_comparison_table(
@@ -319,6 +380,7 @@ def display_comparison_table(
         title_style="bold cyan",
     )
     table.add_column("Strategy", style="bold")
+    table.add_column("Mode")
     table.add_column("Chunks", justify="right")
     table.add_column(f"Hit Rate@{k}", justify="right")
     table.add_column("MRR", justify="right")
@@ -333,6 +395,7 @@ def display_comparison_table(
 
         table.add_row(
             f"{metrics.strategy_name}{marker}",
+            metrics.retrieval_mode,
             str(metrics.num_chunks),
             f"{metrics.hit_rate:.1%}",
             f"{metrics.mrr:.3f}",
@@ -366,6 +429,11 @@ def generate_eval_report_markdown(report: EvalReport, output_dir: Path) -> Path:
     lines.append(f"**Vector Backend:** {report.config.vector_backend}  ")
     lines.append(f"**Chunk Size:** {report.config.chunk_size}  ")
     lines.append(f"**Top-K:** {k}  ")
+    lines.append(
+        f"**Retrieval mode:** {mode_label(report.config.hybrid, bool(report.config.rerank_model))}"
+        + (f" (reranker `{report.config.rerank_model}`)" if report.config.rerank_model else "")
+        + "  "
+    )
     if report.ground_truth:
         lines.append(f"**Evaluation Queries:** {report.ground_truth.query_count}  ")
         lines.append(f"**Ground Truth Source:** `{report.ground_truth.source_path}`  ")
@@ -377,15 +445,15 @@ def generate_eval_report_markdown(report: EvalReport, output_dir: Path) -> Path:
     lines.append("## Strategy Comparison")
     lines.append("")
     lines.append(
-        f"| Strategy | Chunks | Hit Rate@{k} | MRR | Precision@{k} | Recall@{k} | NDCG@{k} |"
+        f"| Strategy | Mode | Chunks | Hit Rate@{k} | MRR | Precision@{k} | Recall@{k} | NDCG@{k} |"
     )
-    lines.append("|----------|--------|------------|-----|-------------|-----------|---------|")
+    lines.append("|----------|------|--------|------------|-----|-------------|-----------|---------|")
 
     for m in report.strategy_results:
         best = " **" if m.strategy_name == report.best_strategy else ""
         end = "**" if best else ""
         lines.append(
-            f"| {best}{m.strategy_name}{end} | {m.num_chunks} | "
+            f"| {best}{m.strategy_name}{end} | {m.retrieval_mode} | {m.num_chunks} | "
             f"{m.hit_rate:.1%} | {m.mrr:.3f} | {m.mean_precision_at_k:.1%} | "
             f"{m.mean_recall_at_k:.1%} | {m.mean_ndcg_at_k:.3f} |"
         )

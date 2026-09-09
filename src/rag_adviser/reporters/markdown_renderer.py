@@ -545,6 +545,9 @@ class MarkdownRenderer:
         lines.append(f"| Embedding model | `{v.embedding_model}` |")
         lines.append(f"| Vector backend | {v.vector_backend} |")
         lines.append(f"| Top-K | {v.top_k} |")
+        lines.append(f"| Retrieval mode | {v.retrieval_mode} |")
+        if v.reranker_model:
+            lines.append(f"| Reranker | `{v.reranker_model}` |")
         lines.append("")
         lines.append("| Metric | Value |")
         lines.append("|--------|-------|")
@@ -553,6 +556,11 @@ class MarkdownRenderer:
         lines.append(f"| Precision@{v.top_k} | {v.precision_at_k:.1%} |")
         lines.append(f"| Recall@{v.top_k} | {v.recall_at_k:.1%} |")
         lines.append(f"| nDCG@{v.top_k} | {v.ndcg_at_k:.3f} |")
+        if v.has_baseline:
+            lines.append(
+                f"| Dense-only baseline | hit rate {v.baseline_hit_rate:.1%}, "
+                f"MRR {v.baseline_mrr:.3f} |"
+            )
         lines.append("")
 
         if v.suggestions:

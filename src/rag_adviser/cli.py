@@ -327,6 +327,28 @@ def evaluate(
                      help="Connection string: PostgreSQL URL for pgvector, "
                           "file path for sqlite (default: in-memory)"),
     ] = "",
+    # Retrieval mode
+    hybrid: Annotated[
+        bool,
+        typer.Option("--hybrid/--no-hybrid",
+                     help="Fuse BM25 with dense results (reciprocal rank fusion)"),
+    ] = False,
+    rerank: Annotated[
+        str | None,
+        typer.Option("--rerank",
+                     help="Cross-encoder model id to rerank the fetched candidates "
+                          "(e.g. cross-encoder/ms-marco-MiniLM-L-6-v2)"),
+    ] = None,
+    fetch_k: Annotated[
+        int,
+        typer.Option("--fetch-k",
+                     help="Candidates to fetch before fusion/reranking (default: 20)"),
+    ] = 20,
+    dense_baseline: Annotated[
+        bool,
+        typer.Option("--dense-baseline/--no-dense-baseline",
+                     help="Also evaluate plain dense retrieval on the same index for comparison"),
+    ] = True,
     # Baseline comparison (CI mode)
     baseline: Annotated[
         Path | None,
@@ -390,6 +412,11 @@ def evaluate(
         vector_backend=backend,
         db_connection=db_connection or None,
         output_dir=output_dir,
+        hybrid=hybrid,
+        rerank_model=rerank,
+        rerank_trust_remote_code=trust_remote_code,
+        fetch_k=fetch_k,
+        dense_baseline=dense_baseline,
     )
 
     try:
@@ -400,7 +427,9 @@ def evaluate(
             f"[bold]Model:[/] {model}\n"
             f"[bold]Strategies:[/] {', '.join(strategies)}\n"
             f"[bold]Backend:[/] {backend}\n"
-            f"[bold]Top-K:[/] {top_k} | [bold]Chunk size:[/] {chunk_size}",
+            f"[bold]Top-K:[/] {top_k} | [bold]Chunk size:[/] {chunk_size}\n"
+            f"[bold]Mode:[/] {'hybrid' if hybrid else 'dense'}"
+            f"{' + rerank (' + rerank + ')' if rerank else ''}",
             title="RAG Evaluation",
             border_style="cyan",
         ))
