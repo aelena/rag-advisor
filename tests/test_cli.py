@@ -6,7 +6,8 @@ from typer.testing import CliRunner
 
 from rag_adviser.cli import app
 
-runner = CliRunner()
+# Plain, wide output so Rich does not wrap or colour option names in CI terminals.
+runner = CliRunner(env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"})
 
 
 class TestCli:
