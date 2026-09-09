@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ragadvisor>
+  <document_discovery>
+    <future_languages>true</future_languages>
+    <content_type>prose</content_type>
+  </document_discovery>
+  <use_case_constraints>
+    <use_case>question_answering</use_case>
+    <deployment>local</deployment>
+    <latency>&lt;2s</latency>
+    <hardware>cpu_only</hardware>
+    <ram_gb>16</ram_gb>
+    <vram_gb>0</vram_gb>
+    <budget>free</budget>
+    <privacy>strict</privacy>
+    <embedding_provider>huggingface</embedding_provider>
+    <llm_provider>none</llm_provider>
+    <implementation_lang>python</implementation_lang>
+    <preferred_libraries>
+      <library>langchain</library>
+      <library>chromadb</library>
+    </preferred_libraries>
+  </use_case_constraints>
+  <query_patterns>
+    <query_type>natural_questions</query_type>
+    <update_frequency>never</update_frequency>
+    <ground_truth>false</ground_truth>
+    <use_llm_verification>false</use_llm_verification>
+  </query_patterns>
+</ragadvisor>

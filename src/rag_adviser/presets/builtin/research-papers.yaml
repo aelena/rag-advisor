@@ -1,0 +1,19 @@
+name: research-papers
+description: "Academic paper search and analysis — multi-hop queries, citation-heavy"
+answers:
+  content_type_override: scientific
+  use_case: question_answering
+  environment: local
+  latency_budget: batch
+  hardware: gpu_available
+  ram_gb: 32
+  vram_gb: 8
+  budget: free
+  privacy: none
+  query_type: natural_questions
+  query_complexity: comparative
+  expected_answer_type: synthesized
+  update_frequency: weekly
+  future_languages: true
+  embedding_provider: huggingface
+  llm_provider: none

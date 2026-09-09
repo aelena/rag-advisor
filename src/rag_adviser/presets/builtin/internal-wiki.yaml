@@ -1,0 +1,17 @@
+name: internal-wiki
+description: "Internal knowledge base / wiki search — moderate scale, mixed content"
+answers:
+  content_type_override: mixed
+  use_case: question_answering
+  environment: on_prem
+  latency_budget: "<2s"
+  hardware: cpu_only
+  ram_gb: 16
+  budget: self_hosted
+  privacy: moderate
+  query_type: natural_questions
+  query_complexity: simple_factual
+  expected_answer_type: synthesized
+  update_frequency: daily
+  embedding_provider: huggingface
+  llm_provider: llama-3

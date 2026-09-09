@@ -1,0 +1,17 @@
+name: code-assistant
+description: "Code documentation search and assistance — precise, low-latency"
+answers:
+  content_type_override: code
+  use_case: code_assistance
+  environment: local
+  latency_budget: "<500ms"
+  hardware: cpu_only
+  ram_gb: 16
+  budget: free
+  privacy: none
+  query_type: short_keywords
+  query_complexity: simple_factual
+  expected_answer_type: exact_passage
+  update_frequency: daily
+  embedding_provider: huggingface
+  llm_provider: none
