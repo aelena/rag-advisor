@@ -630,8 +630,14 @@ class RAGAdviser:
                 f"({v.num_queries} queries, {v.num_chunks} chunks, "
                 f"{v.strategy} @ {v.chunk_size_chars} chars, {v.embedding_model})\n\n"
                 f"Hit rate@{v.top_k}: {v.hit_rate:.1%}   MRR: {v.mrr:.3f}   "
-                f"Recall@{v.top_k}: {v.recall_at_k:.1%}   nDCG@{v.top_k}: {v.ndcg_at_k:.3f}"
+                f"Recall@{v.top_k}: {v.recall_at_k:.1%}   nDCG@{v.top_k}: {v.ndcg_at_k:.3f}\n"
+                f"Mode: {v.retrieval_mode}"
             )
+            if v.has_baseline:
+                body += (
+                    f"   (dense-only: hit rate {v.baseline_hit_rate:.1%}, "
+                    f"MRR {v.baseline_mrr:.3f})"
+                )
             if v.suggestions:
                 body += "\n\n[bold]Next steps:[/]\n" + "\n".join(f"  - {s}" for s in v.suggestions)
             self.console.print(Panel(body, title="Validation", border_style=colour))

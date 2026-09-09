@@ -14,6 +14,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from rag_adviser.evaluators.retrieval_modes import mode_label
 from rag_adviser.models import Recommendations, UserAnswers, ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,23 @@ class RecommendationValidator:
         result.top_k = recs.retrieval.top_k if recs.retrieval else 5
         result.vector_backend = self._pick_backend()
 
+        # Retrieval mode: measure the hybrid / reranking recommendations too.
+        hybrid = bool(recs.retrieval and recs.retrieval.hybrid_search)
+        rerank_model: str | None = None
+        rerank_trc = False
+        fetch_k = 20
+        rr = recs.reranker
+        if rr and rr.enabled:
+            fetch_k = rr.fetch_k
+            if rr.provider == "huggingface":
+                rerank_model = rr.model_id
+                rerank_trc = rr.trust_remote_code
+            else:
+                result.notes.append(
+                    f"Hosted reranker {rr.model_id} is not evaluated locally; "
+                    f"validation measures retrieval without it"
+                )
+
         candidates, model_note = self._local_candidates(recs)
         if model_note:
             result.notes.append(model_note)
@@ -108,7 +126,14 @@ class RecommendationValidator:
             chunk_size=result.chunk_size_chars,
             chunk_overlap=result.chunk_overlap_chars,
             vector_backend=result.vector_backend,
+            hybrid=hybrid,
+            rerank_model=rerank_model,
+            rerank_trust_remote_code=rerank_trc,
+            fetch_k=fetch_k,
+            dense_baseline=True,
         )
+        result.retrieval_mode = mode_label(hybrid, rerank_model is not None)
+        result.reranker_model = rerank_model or ""
 
         # ── Run, falling back to the next local model on load failures ─────
         report = None
@@ -136,6 +161,17 @@ class RecommendationValidator:
             return result
 
         m = report.strategy_results[0]
+        baseline = next(
+            (
+                r for r in report.strategy_results[1:]
+                if r.strategy_name.endswith("(dense baseline)")
+            ),
+            None,
+        )
+        if baseline is not None:
+            result.has_baseline = True
+            result.baseline_hit_rate = baseline.hit_rate
+            result.baseline_mrr = baseline.mrr
         result.ran = True
         result.num_queries = m.num_queries
         result.num_chunks = m.num_chunks
@@ -228,6 +264,26 @@ class RecommendationValidator:
             suggestions.append(
                 "Check the ground truth: relevant_docs must match corpus file names exactly"
             )
+        if result.has_baseline:
+            delta_hit = result.hit_rate - result.baseline_hit_rate
+            delta_mrr = result.mrr - result.baseline_mrr
+            stage = result.retrieval_mode.replace("dense+", "").replace("+", " + ")
+            if delta_hit > 0.02 or delta_mrr > 0.02:
+                result.notes.append(
+                    f"The recommended {stage} stage improved hit rate by "
+                    f"{delta_hit:+.0%} and MRR by {delta_mrr:+.3f} over dense-only retrieval"
+                )
+            elif delta_hit < -0.02 or delta_mrr < -0.02:
+                suggestions.append(
+                    f"The recommended {stage} stage lowered hit rate by {delta_hit:+.0%} "
+                    f"(MRR {delta_mrr:+.3f}) versus dense-only; consider dropping it or "
+                    f"trying a different reranker"
+                )
+            else:
+                suggestions.append(
+                    f"{stage.capitalize()} made no measurable difference versus dense-only "
+                    f"on this data; the simpler dense pipeline may be enough"
+                )
         if result.num_queries < 20:
             suggestions.append(
                 f"Only {result.num_queries} evaluation queries; metrics are noisy below ~20"

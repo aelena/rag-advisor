@@ -415,6 +415,13 @@ class ValidationResult:
     chunk_overlap_chars: int = 0
     top_k: int = 0
     vector_backend: str = ""
+    # Retrieval mode that was measured and, when hybrid/rerank were on, the
+    # plain dense-only numbers from the same index for comparison.
+    retrieval_mode: str = "dense"
+    reranker_model: str = ""
+    has_baseline: bool = False
+    baseline_hit_rate: float = 0.0
+    baseline_mrr: float = 0.0
     # Corpus / query counts
     num_queries: int = 0
     num_chunks: int = 0

@@ -241,6 +241,12 @@ class YamlRenderer:
                     "chunk_overlap_chars": v.chunk_overlap_chars,
                     "vector_backend": v.vector_backend,
                     "top_k": v.top_k,
+                    "retrieval_mode": v.retrieval_mode,
+                    "reranker_model": v.reranker_model or None,
+                    "dense_baseline": (
+                        {"hit_rate": round(v.baseline_hit_rate, 4), "mrr": round(v.baseline_mrr, 4)}
+                        if v.has_baseline else None
+                    ),
                     "num_queries": v.num_queries,
                     "num_chunks": v.num_chunks,
                     "metrics": {

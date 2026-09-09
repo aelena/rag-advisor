@@ -377,6 +377,7 @@
     <li><strong>Embedding model:</strong> <code>{{ v.embedding_model }}</code></li>
     <li><strong>Vector backend:</strong> {{ v.vector_backend }}</li>
     <li><strong>Top-K:</strong> {{ v.top_k }}</li>
+    <li><strong>Retrieval mode:</strong> {{ v.retrieval_mode }}{% if v.reranker_model %} (reranker <code>{{ v.reranker_model }}</code>){% endif %}</li>
 </ul>
 <table>
     <tr><th>Metric</th><th>Value</th></tr>
@@ -385,6 +386,9 @@
     <tr><td>Precision@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.precision_at_k * 100) }}%</td></tr>
     <tr><td>Recall@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.recall_at_k * 100) }}%</td></tr>
     <tr><td>nDCG@{{ v.top_k }}</td><td>{{ "%.3f"|format(v.ndcg_at_k) }}</td></tr>
+    {% if v.has_baseline %}
+    <tr><td>Dense-only baseline</td><td>hit rate {{ "%.1f"|format(v.baseline_hit_rate * 100) }}%, MRR {{ "%.3f"|format(v.baseline_mrr) }}</td></tr>
+    {% endif %}
 </table>
 {% if v.suggestions %}
 <h3>Next Steps</h3>

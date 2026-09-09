@@ -28,6 +28,7 @@ class EvalMetrics:
     """Aggregated metrics across all queries for a strategy."""
 
     strategy_name: str = ""
+    retrieval_mode: str = "dense"  # dense | hybrid | dense+rerank | hybrid+rerank
     num_queries: int = 0
     num_chunks: int = 0
     hit_rate: float = 0.0
@@ -42,14 +43,16 @@ def compute_metrics(
     query_results: list[QueryResult],
     strategy_name: str = "",
     num_chunks: int = 0,
+    retrieval_mode: str = "dense",
 ) -> EvalMetrics:
     """Compute aggregated metrics from per-query results."""
     n = len(query_results)
     if n == 0:
-        return EvalMetrics(strategy_name=strategy_name)
+        return EvalMetrics(strategy_name=strategy_name, retrieval_mode=retrieval_mode)
 
     return EvalMetrics(
         strategy_name=strategy_name,
+        retrieval_mode=retrieval_mode,
         num_queries=n,
         num_chunks=num_chunks,
         hit_rate=sum(1 for q in query_results if q.hit) / n,
