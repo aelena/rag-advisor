@@ -104,12 +104,14 @@ class TestValidator:
             result = RecommendationValidator().validate(answers, _recs())
 
         cfg = captured["config"]
+        assert cfg.embedding_models[0] == "BAAI/bge-base-en-v1.5"
+        assert cfg.max_successful_models == 1
         assert cfg.strategies == ["hierarchical"]
         assert cfg.chunk_size == 1024 * 4          # tokens -> characters
         assert cfg.chunk_overlap == 100 * 4
         assert cfg.top_k == 8
         # Hosted API model skipped in favour of the first local one
-        assert cfg.embedding_model == "BAAI/bge-base-en-v1.5"
+        assert cfg.embedding_models[0] == "BAAI/bge-base-en-v1.5"
         assert any("hosted API" in n for n in result.notes)
 
         assert result.ran is True
@@ -139,9 +141,11 @@ class TestValidator:
         corpus, gt = _corpus_and_gt(tmp_path)
         answers = UserAnswers(document_path=corpus, ground_truth_path=gt)
         attempts: list[str] = []
+        captured_models: list[str] = []
 
         def boom(self, cfg):  # noqa: ANN001
-            attempts.append(cfg.embedding_model)
+            attempts.append(cfg.embedding_models[0])
+            captured_models.extend(cfg.embedding_models)
             raise RuntimeError("model download failed")
 
         with patch.object(RecommendationValidator, "_run", boom):
@@ -149,21 +153,24 @@ class TestValidator:
 
         assert result.ran is False
         assert "RuntimeError" in result.error
-        # Tried the recommended local model, then the default fallback.
-        assert attempts == [
+        # One pipeline run; the fallback chain is handled inside the pipeline.
+        assert attempts == ["BAAI/bge-base-en-v1.5"]
+        assert captured_models == [
             "BAAI/bge-base-en-v1.5",
             "sentence-transformers/all-MiniLM-L6-v2",
         ]
-        assert len(result.notes) >= 2
 
     def test_falls_back_to_next_model_on_load_failure(self, tmp_path: Path) -> None:
         corpus, gt = _corpus_and_gt(tmp_path)
         answers = UserAnswers(document_path=corpus, ground_truth_path=gt)
 
         def flaky(self, cfg):  # noqa: ANN001
-            if cfg.embedding_model == "BAAI/bge-base-en-v1.5":
-                raise ImportError("No module named einops")
-            return _fake_report(0.85, 0.7)
+            # The pipeline skips a model that fails to load and records why.
+            report = _fake_report(0.85, 0.7)
+            report.model_errors["BAAI/bge-base-en-v1.5"] = "ImportError: No module named einops"
+            for m in report.strategy_results:
+                m.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+            return report
 
         with patch.object(RecommendationValidator, "_run", flaky):
             result = RecommendationValidator().validate(answers, _recs())
@@ -196,7 +203,7 @@ class TestValidator:
         captured = {}
 
         def fake_run(self, config):  # noqa: ANN001
-            captured["model"] = config.embedding_model
+            captured["model"] = config.embedding_models[0]
             return _fake_report(0.9, 0.9)
 
         with patch.object(RecommendationValidator, "_run", fake_run):
@@ -210,7 +217,7 @@ class TestValidator:
         captured = {}
 
         def fake_run(self, config):  # noqa: ANN001
-            captured["trc"] = config.trust_remote_code
+            captured["trc"] = "BAAI/bge-base-en-v1.5" in config.trust_remote_code_models
             return _fake_report(0.9, 0.9)
 
         with patch.object(RecommendationValidator, "_run", fake_run):

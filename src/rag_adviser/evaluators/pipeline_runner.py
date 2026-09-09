@@ -48,6 +48,13 @@ class EvalConfig:
     ground_truth_path: Path = field(default_factory=lambda: Path("ground_truth.jsonl"))
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     trust_remote_code: bool = False  # for models that ship custom code (nomic, gte, jina)
+    # Evaluate several models in one run (overrides embedding_model when set).
+    # Models that fail to load are skipped. trust_remote_code_models lists the
+    # ids that need custom code; max_successful_models stops after N models
+    # evaluated successfully (fallback-chain behaviour when set to 1).
+    embedding_models: list[str] = field(default_factory=list)
+    trust_remote_code_models: list[str] = field(default_factory=list)
+    max_successful_models: int | None = None
     strategies: list[str] = field(
         default_factory=lambda: ["recursive", "semantic", "hierarchical", "adaptive"]
     )
@@ -76,7 +83,10 @@ class EvalReport:
     ground_truth: GroundTruthSet | None = None
     strategy_results: list[EvalMetrics] = field(default_factory=list)
     best_strategy: str = ""
+    best_model: str = ""
     embedding_model: str = ""
+    embedding_models: list[str] = field(default_factory=list)
+    model_errors: dict[str, str] = field(default_factory=dict)
 
 
 class EvalPipelineRunner:
@@ -88,8 +98,14 @@ class EvalPipelineRunner:
         self._dimension = 0
 
     def run(self, config: EvalConfig) -> EvalReport:
-        """Execute the full evaluation pipeline."""
-        report = EvalReport(config=config, embedding_model=config.embedding_model)
+        """Execute the full evaluation pipeline for every configured embedding model.
+
+        Models that fail to load are recorded in ``report.model_errors`` and
+        skipped; the run only fails when no model could be evaluated.
+        """
+        models = list(config.embedding_models) or [config.embedding_model]
+        multi = len(models) > 1
+        report = EvalReport(config=config, embedding_model=models[0], embedding_models=models)
 
         with Progress(
             SpinnerColumn(),
@@ -120,15 +136,7 @@ class EvalPipelineRunner:
                     f"No documents found in {config.corpus_path}"
                 )
 
-            # Step 3: Load embedding model
-            task = progress.add_task("Loading embedding model...", total=1)
-            self._load_embedding_model(config.embedding_model, config.trust_remote_code)
-            progress.update(task, completed=1)
-            self.console.print(
-                f"  Model: {config.embedding_model} (dim={self._dimension})"
-            )
-
-            # Step 3b: Optional reranker
+            # Step 3: Optional reranker (shared by every model)
             reranker: CrossEncoderReranker | None = None
             if config.rerank_model:
                 task = progress.add_task("Loading reranker...", total=1)
@@ -140,93 +148,123 @@ class EvalPipelineRunner:
             mode = mode_label(config.hybrid, reranker is not None)
             self.console.print(f"  Retrieval mode: {mode}")
 
-            # Step 4: Apply chunking strategies and evaluate each
-            total_strategies = len(config.strategies)
-            for strat_idx, strategy_name in enumerate(config.strategies):
-                self.console.print(
-                    f"\n[bold cyan]Strategy {strat_idx + 1}/{total_strategies}: "
-                    f"{strategy_name}[/]"
-                )
-
-                # 4a: Chunk
-                task = progress.add_task(
-                    f"  Chunking ({strategy_name})...", total=1
-                )
-                chunked = self._apply_strategy(
-                    strategy_name, documents, config
-                )
-                progress.update(task, completed=1)
-                self.console.print(
-                    f"  Produced {chunked.total_chunks} chunks"
-                )
-
-                # 4b: Embed all chunks
-                task = progress.add_task(
-                    f"  Embedding {chunked.total_chunks} chunks...",
-                    total=chunked.total_chunks,
-                )
-                chunk_embeddings = self._embed_chunks(chunked, progress, task)
-
-                # 4c: Index
-                task = progress.add_task(
-                    f"  Indexing in {config.vector_backend}...", total=1
-                )
-                store = create_vector_store(
-                    backend=config.vector_backend,
-                    connection_string=config.db_connection,
-                )
-                collection_name = f"eval_{strategy_name}"
-                store.create_collection(collection_name, self._dimension)
-                store.add_chunks(chunked.chunks, chunk_embeddings)
-                progress.update(task, completed=1)
-                self.console.print(
-                    f"  Indexed {store.count()} chunks in {config.vector_backend}"
-                )
-
-                # 4d: Query and evaluate in the configured mode, then (optionally)
-                # plain dense retrieval on the same index as a baseline.
-                bm25 = BM25Index(chunked.chunks) if config.hybrid else None
-                runs: list[tuple[str, BM25Index | None, CrossEncoderReranker | None]] = [
-                    (strategy_name, bm25, reranker)
-                ]
-                if config.dense_baseline and (bm25 is not None or reranker is not None):
-                    runs.append((f"{strategy_name} (dense baseline)", None, None))
-
-                for label, run_bm25, run_reranker in runs:
-                    task = progress.add_task(
-                        f"  Evaluating {report.ground_truth.query_count} queries "
-                        f"[{mode_label(run_bm25 is not None, run_reranker is not None)}]...",
-                        total=report.ground_truth.query_count,
-                    )
-                    metrics = self._evaluate_strategy(
-                        store=store,
-                        ground_truth=report.ground_truth,
-                        strategy_name=label,
-                        top_k=config.top_k,
-                        num_chunks=chunked.total_chunks,
-                        progress=progress,
-                        task_id=task,
-                        bm25=run_bm25,
-                        reranker=run_reranker,
-                        fetch_k=config.fetch_k,
-                    )
-                    report.strategy_results.append(metrics)
+            # Step 4: For each embedding model, chunk -> embed -> index -> evaluate
+            trc_models = set(config.trust_remote_code_models)
+            successes = 0
+            for model_idx, model_id in enumerate(models):
+                if config.max_successful_models and successes >= config.max_successful_models:
+                    break
+                if multi:
                     self.console.print(
-                        f"  [green]{metrics.retrieval_mode}: "
-                        f"Hit Rate: {metrics.hit_rate:.1%} | "
-                        f"MRR: {metrics.mrr:.3f} | "
-                        f"Recall@{config.top_k}: {metrics.mean_recall_at_k:.1%}[/]"
+                        f"\n[bold magenta]Model {model_idx + 1}/{len(models)}: {model_id}[/]"
+                    )
+                task = progress.add_task(f"Loading {model_id}...", total=1)
+                try:
+                    self._load_embedding_model(
+                        model_id, config.trust_remote_code or model_id in trc_models
+                    )
+                except Exception as e:  # skip this model, keep evaluating the others
+                    progress.remove_task(task)
+                    report.model_errors[model_id] = f"{type(e).__name__}: {e}"
+                    self.console.print(
+                        f"  [yellow]Skipping {model_id}: {report.model_errors[model_id][:160]}[/]"
+                    )
+                    continue
+                progress.update(task, completed=1)
+                self.console.print(f"  Model: {model_id} (dim={self._dimension})")
+
+                total_strategies = len(config.strategies)
+                for strat_idx, strategy_name in enumerate(config.strategies):
+                    label = self._label(strategy_name, model_id, multi)
+                    self.console.print(
+                        f"\n[bold cyan]Strategy {strat_idx + 1}/{total_strategies}: "
+                        f"{label}[/]"
                     )
 
-                # Clean up
-                store.delete_collection()
+                    # 4a: Chunk
+                    task = progress.add_task(f"  Chunking ({strategy_name})...", total=1)
+                    chunked = self._apply_strategy(strategy_name, documents, config)
+                    progress.update(task, completed=1)
+                    self.console.print(f"  Produced {chunked.total_chunks} chunks")
 
-        # Determine best strategy
+                    # 4b: Embed all chunks
+                    task = progress.add_task(
+                        f"  Embedding {chunked.total_chunks} chunks...",
+                        total=chunked.total_chunks,
+                    )
+                    chunk_embeddings = self._embed_chunks(chunked, progress, task)
+
+                    # 4c: Index
+                    task = progress.add_task(
+                        f"  Indexing in {config.vector_backend}...", total=1
+                    )
+                    store = create_vector_store(
+                        backend=config.vector_backend,
+                        connection_string=config.db_connection,
+                    )
+                    store.create_collection(f"eval_{strategy_name}", self._dimension)
+                    store.add_chunks(chunked.chunks, chunk_embeddings)
+                    progress.update(task, completed=1)
+                    self.console.print(
+                        f"  Indexed {store.count()} chunks in {config.vector_backend}"
+                    )
+
+                    # 4d: Evaluate in the configured mode, then (optionally) plain
+                    # dense retrieval on the same index as a baseline.
+                    bm25 = BM25Index(chunked.chunks) if config.hybrid else None
+                    runs: list[tuple[str, BM25Index | None, CrossEncoderReranker | None]] = [
+                        (label, bm25, reranker)
+                    ]
+                    if config.dense_baseline and (bm25 is not None or reranker is not None):
+                        runs.append((f"{label} (dense baseline)", None, None))
+
+                    for run_label, run_bm25, run_reranker in runs:
+                        task = progress.add_task(
+                            f"  Evaluating {report.ground_truth.query_count} queries "
+                            f"[{mode_label(run_bm25 is not None, run_reranker is not None)}]...",
+                            total=report.ground_truth.query_count,
+                        )
+                        metrics = self._evaluate_strategy(
+                            store=store,
+                            ground_truth=report.ground_truth,
+                            strategy_name=run_label,
+                            top_k=config.top_k,
+                            num_chunks=chunked.total_chunks,
+                            progress=progress,
+                            task_id=task,
+                            bm25=run_bm25,
+                            reranker=run_reranker,
+                            fetch_k=config.fetch_k,
+                        )
+                        metrics.embedding_model = model_id
+                        report.strategy_results.append(metrics)
+                        self.console.print(
+                            f"  [green]{metrics.retrieval_mode}: "
+                            f"Hit Rate: {metrics.hit_rate:.1%} | "
+                            f"MRR: {metrics.mrr:.3f} | "
+                            f"Recall@{config.top_k}: {metrics.mean_recall_at_k:.1%}[/]"
+                        )
+
+                    store.delete_collection()
+                successes += 1
+
+        if not report.strategy_results and report.model_errors:
+            raise EvalPipelineError(
+                "No embedding model could be evaluated: "
+                + "; ".join(f"{m}: {e}" for m, e in report.model_errors.items())
+            )
+
+        # Best configuration across models and strategies (by MRR)
         if report.strategy_results:
             best = max(report.strategy_results, key=lambda m: m.mrr)
             report.best_strategy = best.strategy_name
-
+            report.best_model = best.embedding_model
         return report
+
+    @staticmethod
+    def _label(strategy_name: str, model_id: str, multi: bool) -> str:
+        """Result label; includes the model when several are compared."""
+        return f"{strategy_name} [{model_id.split('/')[-1]}]" if multi else strategy_name
 
     def _load_embedding_model(self, model_id: str, trust_remote_code: bool = False) -> None:
         """Load the sentence-transformers model."""
@@ -374,12 +412,18 @@ def display_comparison_table(
     console = console or Console()
     k = report.config.top_k
 
+    multi = len(report.embedding_models) > 1
+    title_model = (
+        f"{len(report.embedding_models)} models" if multi else report.embedding_model
+    )
     table = Table(
-        title=f"Evaluation Results — {report.embedding_model}",
+        title=f"Evaluation Results — {title_model}",
         show_header=True,
         title_style="bold cyan",
     )
     table.add_column("Strategy", style="bold")
+    if multi:
+        table.add_column("Model")
     table.add_column("Mode")
     table.add_column("Chunks", justify="right")
     table.add_column(f"Hit Rate@{k}", justify="right")
@@ -393,8 +437,10 @@ def display_comparison_table(
         style = "bold green" if is_best else ""
         marker = " *" if is_best else ""
 
-        table.add_row(
-            f"{metrics.strategy_name}{marker}",
+        row = [f"{metrics.strategy_name}{marker}"]
+        if multi:
+            row.append(metrics.embedding_model.split("/")[-1])
+        row += [
             metrics.retrieval_mode,
             str(metrics.num_chunks),
             f"{metrics.hit_rate:.1%}",
@@ -402,12 +448,14 @@ def display_comparison_table(
             f"{metrics.mean_precision_at_k:.1%}",
             f"{metrics.mean_recall_at_k:.1%}",
             f"{metrics.mean_ndcg_at_k:.3f}",
-            style=style,
-        )
+        ]
+        table.add_row(*row, style=style)
 
     console.print()
     console.print(table)
     console.print(f"\n[bold green]* Best strategy:[/] {report.best_strategy} (by MRR)")
+    for model_id, err in report.model_errors.items():
+        console.print(f"[yellow]Skipped {model_id}: {err[:120]}[/]")
     console.print(
         f"[dim]Backend: {report.config.vector_backend} | "
         f"Queries: {report.ground_truth.query_count if report.ground_truth else 0} | "
@@ -425,7 +473,14 @@ def generate_eval_report_markdown(report: EvalReport, output_dir: Path) -> Path:
 
     lines.append("# RAG Evaluation Report")
     lines.append("")
-    lines.append(f"**Embedding Model:** `{report.embedding_model}`  ")
+    if len(report.embedding_models) > 1:
+        lines.append(
+            "**Embedding Models:** " + ", ".join(f"`{m}`" for m in report.embedding_models) + "  "
+        )
+    else:
+        lines.append(f"**Embedding Model:** `{report.embedding_model}`  ")
+    for model_id, err in report.model_errors.items():
+        lines.append(f"**Skipped:** `{model_id}` ({err[:120]})  ")
     lines.append(f"**Vector Backend:** {report.config.vector_backend}  ")
     lines.append(f"**Chunk Size:** {report.config.chunk_size}  ")
     lines.append(f"**Top-K:** {k}  ")

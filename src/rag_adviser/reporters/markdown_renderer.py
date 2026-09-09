@@ -619,6 +619,17 @@ class MarkdownRenderer:
                 f"MRR {v.baseline_mrr:.3f} |"
             )
         lines.append("")
+        if v.model_comparison:
+            lines.append("**Embedding models compared on your data (best first):**")
+            lines.append("")
+            lines.append("| Model | Hit Rate | MRR | Recall |")
+            lines.append("|-------|----------|-----|--------|")
+            for c in v.model_comparison:
+                lines.append(
+                    f"| `{c['model']}` | {c['hit_rate']:.1%} | {c['mrr']:.3f} | "
+                    f"{c['recall_at_k']:.1%} |"
+                )
+            lines.append("")
 
         if v.suggestions:
             lines.append("**Next steps:**")

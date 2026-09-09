@@ -111,6 +111,7 @@ class RecommendationValidator:
         candidates, model_note = self._local_candidates(recs)
         if model_note:
             result.notes.append(model_note)
+        compare_n = max(int(answers.validate_models), 1)
 
         try:
             from rag_adviser.evaluators.pipeline_runner import EvalConfig
@@ -131,40 +132,61 @@ class RecommendationValidator:
             rerank_trust_remote_code=rerank_trc,
             fetch_k=fetch_k,
             dense_baseline=True,
+            # Try the recommended local models in order; the pipeline skips any
+            # that fail to load and stops after `compare_n` successes.
+            embedding_models=[model_id for model_id, _ in candidates],
+            trust_remote_code_models=[m for m, trc in candidates if trc],
+            max_successful_models=compare_n,
         )
         result.retrieval_mode = mode_label(hybrid, rerank_model is not None)
         result.reranker_model = rerank_model or ""
 
-        # ── Run, falling back to the next local model on load failures ─────
-        report = None
-        last_error = ""
-        for model_id, trust_remote_code in candidates:
-            config.embedding_model = model_id
-            config.trust_remote_code = trust_remote_code
-            try:
-                report = self._run(config)
-                result.embedding_model = model_id
-                break
-            except ImportError as e:
-                last_error = f"missing optional dependency for {model_id} ({e}); {_INSTALL_HINT}"
-            except Exception as e:  # evaluation must never break the main run
-                logger.debug("Validation with %s failed", model_id, exc_info=True)
-                last_error = f"{type(e).__name__}: {e}"
-            result.notes.append(f"Could not evaluate with {model_id}: {last_error[:200]}")
-
-        if report is None:
-            result.error = last_error or "no evaluable embedding model"
+        # ── Run (one pass over all candidate models) ───────────────────────
+        try:
+            report = self._run(config)
+        except ImportError as e:
+            result.error = f"missing optional dependency ({e}); {_INSTALL_HINT}"
+            return result
+        except Exception as e:  # evaluation must never break the main run
+            logger.debug("Validation failed", exc_info=True)
+            result.error = f"{type(e).__name__}: {e}"
             return result
 
-        if not report.strategy_results:
+        for model_id, err in report.model_errors.items():
+            result.notes.append(f"Could not evaluate with {model_id}: {err[:200]}")
+
+        primary = [
+            r for r in report.strategy_results if not r.strategy_name.endswith("(dense baseline)")
+        ]
+        if not primary:
             result.error = "evaluation produced no results"
             return result
 
-        m = report.strategy_results[0]
+        # Best model by MRR (then hit rate); the others go into the comparison table.
+        primary.sort(key=lambda r: (r.mrr, r.hit_rate), reverse=True)
+        m = primary[0]
+        result.embedding_model = m.embedding_model or config.embedding_models[0]
+        if len(primary) > 1:
+            result.model_comparison = [
+                {
+                    "model": r.embedding_model,
+                    "hit_rate": round(r.hit_rate, 4),
+                    "mrr": round(r.mrr, 4),
+                    "recall_at_k": round(r.mean_recall_at_k, 4),
+                }
+                for r in primary
+            ]
+            runner_up = primary[1]
+            result.notes.append(
+                f"Compared {len(primary)} embedding models on your data: "
+                f"{m.embedding_model} won (MRR {m.mrr:.3f} vs {runner_up.mrr:.3f} for "
+                f"{runner_up.embedding_model})"
+            )
         baseline = next(
             (
-                r for r in report.strategy_results[1:]
+                r for r in report.strategy_results
                 if r.strategy_name.endswith("(dense baseline)")
+                and r.embedding_model == m.embedding_model
             ),
             None,
         )

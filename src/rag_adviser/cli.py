@@ -149,6 +149,12 @@ def run(
         typer.Option("--ground-truth-path",
                      help="Ground truth file (JSONL or CSV) used by --validate"),
     ] = None,
+    validate_models: Annotated[
+        int,
+        typer.Option("--validate-models",
+                     help="With --validate, compare the top N recommended local embedding "
+                          "models on your data (default: 1)"),
+    ] = 1,
     validate: Annotated[
         bool,
         typer.Option("--validate/--no-validate",
@@ -259,6 +265,7 @@ def run(
                 console.print("[bold red]Error:[/] --validate needs a corpus (--document-path)")
                 raise typer.Exit(1)
             answers.run_validation = True
+            answers.validate_models = max(validate_models, 1)
 
         # Parse output format
         try:
@@ -293,10 +300,10 @@ def evaluate(
     ],
     # Embedding model
     model: Annotated[
-        str,
+        list[str] | None,
         typer.Option("--model", "-m",
-                     help="Embedding model to use for evaluation"),
-    ] = "sentence-transformers/all-MiniLM-L6-v2",
+                     help="Embedding model(s) to evaluate (repeatable; default: all-MiniLM-L6-v2)"),
+    ] = None,
     trust_remote_code: Annotated[
         bool,
         typer.Option("--trust-remote-code",
@@ -398,6 +405,7 @@ def evaluate(
         generate_eval_report_markdown,
     )
 
+    models = model or ["sentence-transformers/all-MiniLM-L6-v2"]
     strategies = strategy or ["recursive", "semantic", "hierarchical", "adaptive"]
     valid_strategies = {"recursive", "semantic", "hierarchical", "adaptive"}
     for s in strategies:
@@ -411,7 +419,8 @@ def evaluate(
     config = EvalConfig(
         corpus_path=corpus,
         ground_truth_path=ground_truth,
-        embedding_model=model,
+        embedding_model=models[0],
+        embedding_models=models,
         trust_remote_code=trust_remote_code,
         strategies=strategies,
         top_k=top_k,
@@ -432,7 +441,7 @@ def evaluate(
         console.print(Panel(
             f"[bold]Corpus:[/] {corpus}\n"
             f"[bold]Ground truth:[/] {ground_truth}\n"
-            f"[bold]Model:[/] {model}\n"
+            f"[bold]Model(s):[/] {', '.join(models)}\n"
             f"[bold]Strategies:[/] {', '.join(strategies)}\n"
             f"[bold]Backend:[/] {backend}\n"
             f"[bold]Top-K:[/] {top_k} | [bold]Chunk size:[/] {chunk_size}\n"

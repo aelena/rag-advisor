@@ -233,6 +233,8 @@ class UserAnswers:
     # Run the recommended configuration against ground_truth_path and report
     # retrieval metrics (requires the [eval] extra).
     run_validation: bool = False
+    # How many of the recommended local embedding models --validate compares.
+    validate_models: int = 1
 
 
 @dataclass
@@ -457,6 +459,8 @@ class ValidationResult:
     has_baseline: bool = False
     baseline_hit_rate: float = 0.0
     baseline_mrr: float = 0.0
+    # When several models were compared: [{model, hit_rate, mrr, recall_at_k}], best first.
+    model_comparison: list[dict] = field(default_factory=list)
     # Corpus / query counts
     num_queries: int = 0
     num_chunks: int = 0
