@@ -500,6 +500,15 @@ class InteractiveFlow:
         )
         self.answers.update_frequency = UpdateFrequency(selected_update)
 
+        qpd = Prompt.ask(
+            "Expected queries per day (drives cost/capacity estimates)",
+            default=str(self.answers.expected_queries_per_day),
+        )
+        try:
+            self.answers.expected_queries_per_day = max(int(qpd.replace(",", "").strip()), 0)
+        except ValueError:
+            self.console.print("[dim]Not a number; keeping the default.[/]")
+
         # Step 13: Ground truth
         self.console.print()
         self.console.print(f"[bold]Step 13/{self.TOTAL_STEPS}:[/] Evaluation data")

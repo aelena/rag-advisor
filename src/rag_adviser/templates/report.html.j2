@@ -361,6 +361,31 @@
 <hr>
 {% endif %}
 
+{% if recommendations.estimates %}
+{% set e = recommendations.estimates %}
+<h2>Cost, Footprint &amp; Latency Estimates</h2>
+<p>Order-of-magnitude figures for planning; compare them, do not bill against them.</p>
+<table>
+    <tr><th>Item</th><th>Estimate</th></tr>
+    {% if e.chunk_count %}
+    <tr><td>Corpus tokens</td><td>{{ '~' if e.corpus_tokens_estimated }}{{ '{:,}'.format(e.corpus_tokens) }}</td></tr>
+    <tr><td>Chunks to index</td><td>{{ '~' if e.corpus_tokens_estimated }}{{ '{:,}'.format(e.chunk_count) }}</td></tr>
+    <tr><td>Index on disk</td><td>~{{ '%.0f'|format(e.index_size_mb) }} MB</td></tr>
+    <tr><td>Vectors in RAM</td><td>~{{ '%.0f'|format(e.index_memory_mb) }} MB</td></tr>
+    {% if e.embedding_is_api %}<tr><td>One-off embedding cost</td><td>~${{ '%.2f'|format(e.indexing_cost_usd) }}</td></tr>{% endif %}
+    <tr><td>Indexing time</td><td>~{{ '%.0f'|format(e.indexing_time_min) }} min</td></tr>
+    {% endif %}
+    <tr><td>Retrieval latency per query</td><td>~{{ e.query_latency_ms }} ms
+        <span class="score-badge {{ 'score-high' if e.fits_latency_budget else 'score-low' }}">{{ 'fits' if e.fits_latency_budget else 'exceeds' }} budget</span></td></tr>
+    {% if e.queries_per_day %}<tr><td>Monthly query-side API cost</td><td>~${{ '%.2f'|format(e.monthly_query_cost_usd) }} at {{ '{:,}'.format(e.queries_per_day) }} queries/day</td></tr>{% endif %}
+</table>
+{% if e.query_latency_breakdown_ms %}<p><strong>Latency breakdown (ms):</strong> {% for k, v in e.query_latency_breakdown_ms.items() %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% for w in e.warnings %}<div class="warning-box">{{ w }}</div>{% endfor %}
+{% for n in e.notes %}<div class="info-box">{{ n }}</div>{% endfor %}
+{% if e.assumptions %}<h3>Assumptions</h3><ul>{% for a in e.assumptions %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+<hr>
+{% endif %}
+
 {% if recommendations.validation %}
 {% set v = recommendations.validation %}
 <h2>Validation Against Ground Truth</h2>

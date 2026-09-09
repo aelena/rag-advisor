@@ -225,6 +225,8 @@ class UserAnswers:
     update_frequency: UpdateFrequency = UpdateFrequency.NEVER
     has_ground_truth: bool = False
     ground_truth_path: Path | None = None
+    # Expected traffic; drives the monthly cost and capacity estimates.
+    expected_queries_per_day: int = 1000
 
     # Meta
     use_llm_verification: bool = False
@@ -253,6 +255,8 @@ class EmbeddingModelRecommendation:
     # Model ships custom code on the Hub; sentence-transformers needs
     # trust_remote_code=True to load it.
     trust_remote_code: bool = False
+    # Hosted APIs: indicative USD per 1M input tokens. None for local models.
+    price_per_million_tokens: float | None = None
     # Approximate MTEB retrieval quality (nDCG@10, 0-100). 0 = unknown.
     quality_score: float = 0.0
     score: float = 0.0
@@ -398,6 +402,37 @@ class RerankerRecommendation:
 
 
 @dataclass
+class CostEstimate:
+    """Order-of-magnitude footprint, latency and cost figures."""
+
+    # Corpus / index
+    corpus_tokens: int = 0
+    corpus_tokens_estimated: bool = False
+    chunk_count: int = 0
+    tokens_to_embed: int = 0
+    embedding_model: str = ""
+    embedding_is_api: bool = False
+    index_size_mb: float = 0.0      # vectors + payload (+ BM25) on disk
+    index_memory_mb: float = 0.0    # vectors + ANN graph in RAM
+    # One-off indexing
+    indexing_cost_usd: float = 0.0
+    indexing_time_min: float = 0.0
+    # Recurring
+    monthly_reindex_cost_usd: float = 0.0
+    monthly_query_cost_usd: float = 0.0
+    queries_per_day: int = 0
+    # Latency
+    query_latency_ms: int = 0
+    query_latency_breakdown_ms: dict[str, int] = field(default_factory=dict)
+    latency_budget_ms: int = 0
+    fits_latency_budget: bool = True
+    # Context
+    assumptions: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ValidationResult:
     """Outcome of running the recommended configuration against ground truth.
 
@@ -449,6 +484,7 @@ class Recommendations:
     query_transformation: QueryTransformationRecommendation | None = None
     reranker: RerankerRecommendation | None = None
     modalities: list[ModalityRecommendation] = field(default_factory=list)
+    estimates: CostEstimate | None = None
     llm_verification: LLMVerification | None = None
     validation: ValidationResult | None = None
     warnings: list[str] = field(default_factory=list)

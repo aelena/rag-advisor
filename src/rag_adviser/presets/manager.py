@@ -146,6 +146,8 @@ class PresetManager:
             )
         if "has_ground_truth" in data:
             answers.has_ground_truth = data["has_ground_truth"]
+        if "expected_queries_per_day" in data:
+            answers.expected_queries_per_day = int(data["expected_queries_per_day"])
 
         return answers
 
@@ -232,5 +234,6 @@ class PresetManager:
         d["expected_answer_type"] = answers.expected_answer_type.value
         d["update_frequency"] = answers.update_frequency.value
         d["has_ground_truth"] = answers.has_ground_truth
+        d["expected_queries_per_day"] = answers.expected_queries_per_day
 
         return d

@@ -139,6 +139,11 @@ def run(
         typer.Option("--ground-truth/--no-ground-truth",
                      help="Have ground truth evaluation data?"),
     ] = None,
+    queries_per_day: Annotated[
+        int | None,
+        typer.Option("--queries-per-day",
+                     help="Expected query volume, drives cost/capacity estimates (default: 1000)"),
+    ] = None,
     ground_truth_path: Annotated[
         Path | None,
         typer.Option("--ground-truth-path",
@@ -222,6 +227,7 @@ def run(
                 update_frequency=update_frequency,
                 has_ground_truth=has_ground_truth,
                 ground_truth_path=ground_truth_path,
+                queries_per_day=queries_per_day,
             )
         else:
             from rag_adviser.input_modes.interactive import InteractiveFlow
@@ -230,6 +236,8 @@ def run(
             answers = flow.run()
 
         answers.use_llm_verification = use_llm
+        if queries_per_day is not None:
+            answers.expected_queries_per_day = queries_per_day
 
         # --ground-truth-path / --validate apply to every input mode
         if ground_truth_path is not None:

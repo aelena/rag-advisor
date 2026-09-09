@@ -79,6 +79,9 @@ class MarkdownRenderer:
         # Query Pipeline
         lines.extend(self._section_query_pipeline(recs))
 
+        # Cost, footprint and latency estimates
+        lines.extend(self._section_estimates(recs))
+
         # Validation against ground truth
         lines.extend(self._section_validation(recs))
 
@@ -517,6 +520,60 @@ class MarkdownRenderer:
             lines.append("")
 
         lines.extend(["---", ""])
+        return lines
+
+    def _section_estimates(self, recs: Recommendations) -> list[str]:
+        """Render order-of-magnitude cost, footprint and latency estimates."""
+        e = recs.estimates
+        if e is None:
+            return []
+
+        lines = ["## Cost, Footprint & Latency Estimates", ""]
+        lines.append(
+            "Order-of-magnitude figures for planning; compare them, do not bill against them."
+        )
+        lines.append("")
+        approx = "~" if e.corpus_tokens_estimated else ""
+        lines.append("| Item | Estimate |")
+        lines.append("|------|----------|")
+        if e.chunk_count:
+            lines.append(f"| Corpus tokens | {approx}{e.corpus_tokens:,} |")
+            lines.append(f"| Chunks to index | {approx}{e.chunk_count:,} |")
+            lines.append(f"| Tokens to embed | {approx}{e.tokens_to_embed:,} |")
+            lines.append(f"| Index on disk | ~{e.index_size_mb:,.0f} MB |")
+            lines.append(f"| Vectors in RAM | ~{e.index_memory_mb:,.0f} MB |")
+            if e.embedding_is_api:
+                lines.append(f"| One-off embedding cost | ~${e.indexing_cost_usd:,.2f} |")
+            lines.append(f"| Indexing time | ~{e.indexing_time_min:,.0f} min |")
+            if e.monthly_reindex_cost_usd:
+                lines.append(f"| Monthly re-indexing (API) | ~${e.monthly_reindex_cost_usd:,.2f} |")
+        budget = f"{e.latency_budget_ms} ms" if e.latency_budget_ms < 10**9 else "unlimited"
+        fit = "fits" if e.fits_latency_budget else "**exceeds**"
+        lines.append(
+            f"| Retrieval latency per query | ~{e.query_latency_ms} ms ({fit} {budget} budget) |"
+        )
+        if e.queries_per_day:
+            lines.append(
+                f"| Monthly query-side API cost | ~${e.monthly_query_cost_usd:,.2f} "
+                f"at {e.queries_per_day:,} queries/day |"
+            )
+        lines.append("")
+
+        if e.query_latency_breakdown_ms:
+            lines.append("**Latency breakdown (ms):** " + ", ".join(
+                f"{k.replace('_', ' ')} {v}" for k, v in e.query_latency_breakdown_ms.items()
+            ))
+            lines.append("")
+        for w in e.warnings:
+            lines.append(f"- **Warning:** {w}")
+        for n in e.notes:
+            lines.append(f"- {n}")
+        if e.assumptions:
+            lines.append("")
+            lines.append("**Assumptions:**")
+            for a in e.assumptions:
+                lines.append(f"- {a}")
+        lines.extend(["", "---", ""])
         return lines
 
     def _section_validation(self, recs: Recommendations) -> list[str]:
