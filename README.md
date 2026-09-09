@@ -3,7 +3,8 @@
 [![CI](https://github.com/aelena/rag-advisor/actions/workflows/ci.yml/badge.svg)](https://github.com/aelena/rag-advisor/actions/workflows/ci.yml)
 [![Python 3.10 | 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational)](pyproject.toml)
+[![PyPI](https://img.shields.io/pypi/v/ragadvisor?label=PyPI)](https://pypi.org/project/ragadvisor/)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational)](CHANGELOG.md)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
 [![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
@@ -63,8 +64,11 @@ RAG Advisor runs an 11-step pipeline:
 Requires Python 3.10+.
 
 ```bash
-pip install -e .
+pip install ragadvisor            # from PyPI
+pip install -e .                  # from a clone, for development
 ```
+
+See the [changelog](CHANGELOG.md) for what each release added.
 
 ### Optional dependencies
 
@@ -97,7 +101,7 @@ Launches a guided 13-step questionnaire with a Rich terminal UI, organized into 
 - **Approach Gate** — Checks if RAG is the right approach before continuing
 - **Phase 3** — Query & operational patterns (query type, complexity, answer type, update frequency)
 
-At the end, you can optionally save your answers as a custom preset for future use.
+If you give a ground-truth file, the flow offers to validate the recommendation right away and asks how many embedding models to compare and which extra chunk sizes to try. At the end, you can optionally save your answers as a custom preset for future use.
 
 ### Non-interactive mode
 
@@ -603,7 +607,8 @@ Machine-readable configuration file with all recommendations structured for prog
 
 ```
 src/rag_adviser/
-├── cli.py                          # Typer CLI (run, evaluate, analyze, ask, presets, version)
+├── cli.py                          # Typer CLI (run, evaluate, analyze, ask, presets, refresh-catalogue, version)
+├── catalogue_refresh.py            # MTEB score refresh from model cards
 ├── main.py                         # RAGAdviser orchestrator — coordinates the pipeline
 ├── models.py                       # Data models, enums, exceptions
 ├── analyzers/
@@ -619,7 +624,9 @@ src/rag_adviser/
 │   ├── vector_store.py             # Abstract store + 4 backends (Chroma, FAISS, pgvector, sqlite-vec)
 │   ├── metrics.py                  # Hit Rate, MRR, Precision, Recall, NDCG
 │   ├── ground_truth_loader.py      # JSONL/CSV ground truth parser
-│   └── baseline.py                 # Baseline save/load/compare for CI regression
+│   ├── baseline.py                 # Baseline save/load/compare for CI regression
+│   ├── retrieval_modes.py          # BM25 index, RRF fusion, cross-encoder reranking
+│   └── validator.py                # --validate: measure recommendations on your data
 ├── input_modes/
 │   ├── interactive.py              # Rich-powered 13-step guided flow + preset saving
 │   ├── cli_params.py               # CLI flag → UserAnswers converter
@@ -634,7 +641,11 @@ src/rag_adviser/
 │   ├── model_finder.py             # HuggingFace Hub API + offline fallback + scoring
 │   ├── chunking_recommender.py     # Content-type-aware chunking strategy selection
 │   ├── vector_db_recommender.py    # Vector DB scoring and selection
-│   └── query_recommender.py        # Query transformation pipeline recommendations
+│   ├── query_recommender.py        # Query transformation pipeline recommendations
+│   ├── hybrid_recommender.py       # BM25 + dense hybrid retrieval decision
+│   ├── reranker_recommender.py     # Cross-encoder selection under latency budgets
+│   ├── modality_recommender.py     # Ingestion plans for non-text files
+│   └── cost_estimator.py           # Footprint, latency and cost estimates
 ├── reporters/
 │   ├── markdown_renderer.py        # Markdown report renderer
 │   ├── html_renderer.py            # Jinja2-based HTML renderer
@@ -673,6 +684,16 @@ All defaults, scoring weights, fallback models, and database profiles are define
 | `min_language_confidence` | 0.1 | Minimum confidence for language detection |
 | `default_overlap_ratio` | 0.1 | Chunk overlap as fraction of chunk size |
 | `cjk_chunk_size_multiplier` | 0.7 | Chunk size reduction for CJK languages |
+
+## Releasing
+
+Releases are cut from tags. Bump `version` in `pyproject.toml` and `src/rag_adviser/__init__.py`, add a section to `CHANGELOG.md`, commit, then:
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+The release workflow builds the wheel and sdist, checks the tag matches the package version, publishes to PyPI via trusted publishing (configure the `pypi` environment and the trusted publisher on pypi.org once), and attaches the files to a GitHub release.
 
 ## Contributing
 
