@@ -30,6 +30,8 @@ class EvalMetrics:
     strategy_name: str = ""
     retrieval_mode: str = "dense"  # dense | hybrid | dense+rerank | hybrid+rerank
     embedding_model: str = ""
+    chunk_size: int = 0      # characters, as used by the evaluation chunkers
+    chunk_overlap: int = 0
     num_queries: int = 0
     num_chunks: int = 0
     hit_rate: float = 0.0

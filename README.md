@@ -202,6 +202,7 @@ ragadvisor run --no-interactive -d ./docs --use-case question_answering \
 - If the top embedding recommendation is a hosted API, the best local alternative is evaluated instead and the report says so. If a model fails to load (missing extra package, gated repo), the next recommended local model is tried and the report lists what was skipped.
 - With no vector database installed, an exact numpy search (`--backend memory`) is used, so only `sentence-transformers` is strictly required.
 - `--validate-models 2` (or more) evaluates the top recommended local embedding models side by side and reports which one actually retrieves best on your queries.
+- `--validate-chunk-sizes 256,512,1024` sweeps chunk sizes around the recommendation and says whether a different size wins on your data.
 - Hybrid retrieval and a local reranker, when recommended, are part of what gets measured. The same index is also queried dense-only, so the report states whether those stages actually helped on your data.
 - Verdicts: **strong** (hit rate ≥ 80%), **acceptable** (≥ 60%), **weak**. Weak results come with suggestions: raise top-k, add a reranker, enable hybrid search, or compare strategies with `ragadvisor evaluate`.
 - The interactive flow offers validation as soon as you provide a ground-truth path.
@@ -241,6 +242,9 @@ ragadvisor evaluate ./docs ./queries.jsonl
 
 # Compare specific strategies
 ragadvisor evaluate ./docs ./queries.jsonl --strategy recursive --strategy semantic
+
+# Sweep chunk sizes (overlap scales with size); the report shows MRR per size per strategy
+ragadvisor evaluate ./docs ./queries.jsonl --chunk-size 256 --chunk-size 512 --chunk-size 1024
 
 # Compare embedding models (models that fail to load are skipped, not fatal)
 ragadvisor evaluate ./docs ./queries.jsonl -m BAAI/bge-small-en-v1.5 -m BAAI/bge-base-en-v1.5
@@ -371,6 +375,7 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--ground-truth-path PATH` | | Ground truth file (JSONL/CSV) for `--validate` |
 | `--validate / --no-validate` | | Run the recommended configuration against the ground truth and report metrics |
 | `--validate-models N` | | With `--validate`, compare the top N recommended local embedding models on your data |
+| `--validate-chunk-sizes LIST` | | With `--validate`, also try these chunk sizes in tokens (e.g. `256,512,1024`) |
 | `--format FORMAT` | `-f` | `markdown`, `html`, `yaml`, `all` (default: `all`) |
 | `--output DIR` | `-o` | Output directory (default: `./rag_report`) |
 | `--use-llm / --no-llm` | | Send recommendations to an LLM for verification |
@@ -381,8 +386,9 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 |------|-------|-------------|
 | `--model NAME` | `-m` | Embedding model(s) to compare, repeatable (default: `all-MiniLM-L6-v2`) |
 | `--strategy NAME` | `-s` | Chunking strategies to compare (repeatable) |
-| `--chunk-size N` | | Base chunk size in characters (default: 512) |
-| `--chunk-overlap N` | | Chunk overlap in characters (default: 50) |
+| `--chunk-size N` | | Chunk size in characters; repeat to sweep several sizes (default: 512) |
+| `--chunk-overlap N` | | Overlap in characters for a single size (default: 50) |
+| `--overlap-ratio X` | | When sweeping, overlap = size × ratio (default: 0.1) |
 | `--top-k N` | `-k` | Results to retrieve per query (default: 5) |
 | `--backend NAME` | `-b` | Vector backend: `chroma`, `faiss`, `pgvector`, `sqlite` |
 | `--db-connection STR` | | Connection string for pgvector or sqlite |

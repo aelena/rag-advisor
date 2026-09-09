@@ -411,6 +411,9 @@
     <tr><td>Precision@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.precision_at_k * 100) }}%</td></tr>
     <tr><td>Recall@{{ v.top_k }}</td><td>{{ "%.1f"|format(v.recall_at_k * 100) }}%</td></tr>
     <tr><td>nDCG@{{ v.top_k }}</td><td>{{ "%.3f"|format(v.ndcg_at_k) }}</td></tr>
+    {% for c in v.chunk_size_comparison %}
+    <tr><td>Chunk size {{ c.chunk_size_tokens }} tokens{% if c.chunk_size_tokens == v.recommended_chunk_size_tokens %} (recommended){% endif %}</td><td>hit rate {{ "%.1f"|format(c.hit_rate * 100) }}%, MRR {{ "%.3f"|format(c.mrr) }}</td></tr>
+    {% endfor %}
     {% for c in v.model_comparison %}
     <tr><td>{{ 'Best model' if loop.first else 'Alternative' }}: <code>{{ c.model }}</code></td><td>hit rate {{ "%.1f"|format(c.hit_rate * 100) }}%, MRR {{ "%.3f"|format(c.mrr) }}</td></tr>
     {% endfor %}

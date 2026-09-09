@@ -235,6 +235,8 @@ class UserAnswers:
     run_validation: bool = False
     # How many of the recommended local embedding models --validate compares.
     validate_models: int = 1
+    # Extra chunk sizes (tokens) to sweep during --validate; empty = recommended only.
+    validate_chunk_sizes: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -461,6 +463,11 @@ class ValidationResult:
     baseline_mrr: float = 0.0
     # When several models were compared: [{model, hit_rate, mrr, recall_at_k}], best first.
     model_comparison: list[dict] = field(default_factory=list)
+    # When chunk sizes were swept: [{chunk_size_tokens, chunk_size_chars, hit_rate, mrr}],
+    # best first.
+    chunk_size_comparison: list[dict] = field(default_factory=list)
+    recommended_chunk_size_tokens: int = 0
+    best_chunk_size_tokens: int = 0
     # Corpus / query counts
     num_queries: int = 0
     num_chunks: int = 0

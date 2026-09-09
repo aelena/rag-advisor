@@ -155,6 +155,12 @@ def run(
                      help="With --validate, compare the top N recommended local embedding "
                           "models on your data (default: 1)"),
     ] = 1,
+    validate_chunk_sizes: Annotated[
+        str | None,
+        typer.Option("--validate-chunk-sizes",
+                     help="With --validate, also try these chunk sizes in tokens, "
+                          "comma-separated (e.g. 256,512,1024)"),
+    ] = None,
     validate: Annotated[
         bool,
         typer.Option("--validate/--no-validate",
@@ -267,6 +273,17 @@ def run(
             answers.run_validation = True
             if validate_models != 1 or not answers.validate_models:
                 answers.validate_models = max(validate_models, 1)
+            if validate_chunk_sizes:
+                try:
+                    answers.validate_chunk_sizes = sorted({
+                        int(s) for s in validate_chunk_sizes.split(",") if s.strip()
+                    })
+                except ValueError:
+                    console.print(
+                        "[bold red]Error:[/] --validate-chunk-sizes must be "
+                        "comma-separated integers (tokens)"
+                    )
+                    raise typer.Exit(1) from None
 
         # Parse output format
         try:
@@ -319,13 +336,21 @@ def evaluate(
     ] = None,
     # Chunk parameters
     chunk_size: Annotated[
-        int,
-        typer.Option("--chunk-size", help="Base chunk size in characters"),
-    ] = 512,
+        list[int] | None,
+        typer.Option("--chunk-size",
+                     help="Chunk size in characters; repeat to sweep several sizes "
+                          "(default: 512)"),
+    ] = None,
     chunk_overlap: Annotated[
         int,
-        typer.Option("--chunk-overlap", help="Chunk overlap in characters"),
+        typer.Option("--chunk-overlap",
+                     help="Chunk overlap in characters for a single size (default: 50)"),
     ] = 50,
+    overlap_ratio: Annotated[
+        float,
+        typer.Option("--overlap-ratio",
+                     help="When sweeping sizes, overlap = size x ratio (default: 0.1)"),
+    ] = 0.1,
     # Retrieval parameters
     top_k: Annotated[
         int,
@@ -407,6 +432,7 @@ def evaluate(
     )
 
     models = model or ["sentence-transformers/all-MiniLM-L6-v2"]
+    sizes = sorted({s for s in (chunk_size or [512]) if s > 0}) or [512]
     strategies = strategy or ["recursive", "semantic", "hierarchical", "adaptive"]
     valid_strategies = {"recursive", "semantic", "hierarchical", "adaptive"}
     for s in strategies:
@@ -425,8 +451,10 @@ def evaluate(
         trust_remote_code=trust_remote_code,
         strategies=strategies,
         top_k=top_k,
-        chunk_size=chunk_size,
+        chunk_size=sizes[0],
+        chunk_sizes=sizes,
         chunk_overlap=chunk_overlap,
+        overlap_ratio=overlap_ratio,
         vector_backend=backend,
         db_connection=db_connection or None,
         output_dir=output_dir,
@@ -445,7 +473,8 @@ def evaluate(
             f"[bold]Model(s):[/] {', '.join(models)}\n"
             f"[bold]Strategies:[/] {', '.join(strategies)}\n"
             f"[bold]Backend:[/] {backend}\n"
-            f"[bold]Top-K:[/] {top_k} | [bold]Chunk size:[/] {chunk_size}\n"
+            f"[bold]Top-K:[/] {top_k} | [bold]Chunk size(s):[/] "
+            f"{', '.join(str(s) for s in sizes)}\n"
             f"[bold]Mode:[/] {'hybrid' if hybrid else 'dense'}"
             f"{' + rerank (' + rerank + ')' if rerank else ''}",
             title="RAG Evaluation",

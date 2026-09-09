@@ -266,6 +266,8 @@ class YamlRenderer:
                     "top_k": v.top_k,
                     "retrieval_mode": v.retrieval_mode,
                     "model_comparison": v.model_comparison or None,
+                    "chunk_size_comparison": v.chunk_size_comparison or None,
+                    "best_chunk_size_tokens": v.best_chunk_size_tokens or None,
                     "reranker_model": v.reranker_model or None,
                     "dense_baseline": (
                         {"hit_rate": round(v.baseline_hit_rate, 4), "mrr": round(v.baseline_mrr, 4)}
