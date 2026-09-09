@@ -154,6 +154,11 @@ class RecommendationVerifier:
                 f"rerank={r.rerank}, strategy={r.prompt_strategy}, "
                 f"temperature={r.temperature}"
             )
+            if r.hybrid_search:
+                native = "native" if r.hybrid_native else "in-process rank-bm25"
+                parts.append(
+                    f"hybrid={r.sparse_method} + dense, fusion={r.fusion_method} ({native})"
+                )
             parts.append("")
 
         if recs.query_transformation and recs.query_transformation.techniques:
@@ -161,6 +166,18 @@ class RecommendationVerifier:
                 t["name"] for t in recs.query_transformation.techniques
             )
             parts.append(f"### Query Pipeline: {techniques}")
+            parts.append("")
+
+        if recs.validation and recs.validation.ran:
+            v = recs.validation
+            parts.append("### Measured on the user's ground truth")
+            parts.append(
+                f"{v.num_queries} queries, strategy={v.strategy}, "
+                f"model={v.embedding_model}, top_k={v.top_k}: "
+                f"hit_rate={v.hit_rate:.2f}, mrr={v.mrr:.2f}, "
+                f"recall@k={v.recall_at_k:.2f}, ndcg@k={v.ndcg_at_k:.2f} "
+                f"(verdict: {v.verdict})"
+            )
             parts.append("")
 
         if recs.warnings:

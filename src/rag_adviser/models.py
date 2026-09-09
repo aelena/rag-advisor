@@ -219,6 +219,9 @@ class UserAnswers:
 
     # Meta
     use_llm_verification: bool = False
+    # Run the recommended configuration against ground_truth_path and report
+    # retrieval metrics (requires the [eval] extra).
+    run_validation: bool = False
 
 
 @dataclass
@@ -238,6 +241,9 @@ class EmbeddingModelRecommendation:
     # "huggingface" for self-hostable open models, or an API vendor
     # ("openai", "cohere", "voyage") for hosted embedding endpoints.
     provider: str = "huggingface"
+    # Model ships custom code on the Hub; sentence-transformers needs
+    # trust_remote_code=True to load it.
+    trust_remote_code: bool = False
     # Approximate MTEB retrieval quality (nDCG@10, 0-100). 0 = unknown.
     quality_score: float = 0.0
     score: float = 0.0
@@ -284,6 +290,13 @@ class RetrievalRecommendation:
     temperature: float = 0.1
     max_tokens: int = 500
     prompt_strategy: str = "stuff"
+    # Hybrid (sparse + dense) retrieval
+    hybrid_search: bool = False
+    sparse_method: str = "bm25"
+    fusion_method: str = "rrf"
+    hybrid_native: bool = False  # chosen vector DB supports hybrid natively
+    hybrid_reasons: list[str] = field(default_factory=list)
+    hybrid_code_snippet: str = ""
     query_preprocessing: dict[str, bool] = field(
         default_factory=lambda: {"lowercase": True, "remove_punctuation": True}
     )
@@ -326,6 +339,39 @@ class LLMVerification:
 
 
 @dataclass
+class ValidationResult:
+    """Outcome of running the recommended configuration against ground truth.
+
+    Produced by ``ragadvisor run --validate``. ``ran`` is False when validation
+    could not execute (missing paths, missing optional dependencies, runtime
+    error); ``error`` then explains why.
+    """
+
+    ran: bool = False
+    error: str = ""
+    # What was actually evaluated
+    strategy: str = ""
+    embedding_model: str = ""
+    chunk_size_chars: int = 0
+    chunk_overlap_chars: int = 0
+    top_k: int = 0
+    vector_backend: str = ""
+    # Corpus / query counts
+    num_queries: int = 0
+    num_chunks: int = 0
+    # Metrics (0-1)
+    hit_rate: float = 0.0
+    mrr: float = 0.0
+    precision_at_k: float = 0.0
+    recall_at_k: float = 0.0
+    ndcg_at_k: float = 0.0
+    # Interpretation
+    verdict: str = ""  # "strong" | "acceptable" | "weak"
+    suggestions: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Recommendations:
     """Complete set of recommendations."""
 
@@ -336,5 +382,6 @@ class Recommendations:
     retrieval: RetrievalRecommendation | None = None
     query_transformation: QueryTransformationRecommendation | None = None
     llm_verification: LLMVerification | None = None
+    validation: ValidationResult | None = None
     warnings: list[str] = field(default_factory=list)
     implementation_steps: list[str] = field(default_factory=list)

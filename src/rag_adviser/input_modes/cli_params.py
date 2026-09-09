@@ -47,6 +47,7 @@ class CliParamsCollector:
         sample_queries: list[str] | None = None,
         update_frequency: str | None = None,
         has_ground_truth: bool | None = None,
+        ground_truth_path: Path | None = None,
     ) -> UserAnswers:
         """Build UserAnswers from CLI options.
 
@@ -184,5 +185,11 @@ class CliParamsCollector:
 
         if has_ground_truth is not None:
             answers.has_ground_truth = has_ground_truth
+
+        if ground_truth_path is not None:
+            if not ground_truth_path.exists():
+                raise InvalidInputError(f"Ground truth file not found: {ground_truth_path}")
+            answers.ground_truth_path = ground_truth_path
+            answers.has_ground_truth = True
 
         return answers

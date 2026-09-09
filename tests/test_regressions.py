@@ -156,6 +156,16 @@ class TestModelFinderRegressions:
         assert models[0].model_id != "sentence-transformers/all-MiniLM-L6-v2"
         assert models[0].quality_score >= 50
 
+    def test_trust_remote_code_flagged(self) -> None:
+        finder = HFModelFinder(offline=True)
+        models = finder.find_models(
+            doc_stats=None, constraints=HardwareConstraints(), use_case=UseCase.QA
+        )
+        nomic = next((m for m in models if m.model_id.startswith("nomic-ai/")), None)
+        if nomic is not None:
+            assert nomic.trust_remote_code is True
+            assert any("trust_remote_code" in w for w in nomic.warnings)
+
     def test_non_commercial_license_flagged(self) -> None:
         finder = HFModelFinder(offline=True)
         hw = HardwareConstraints(ram_gb=64)
