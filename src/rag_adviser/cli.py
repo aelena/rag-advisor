@@ -332,7 +332,8 @@ def evaluate(
         list[str] | None,
         typer.Option("--strategy", "-s",
                      help="Chunking strategies to compare (repeatable). "
-                          "Options: recursive, semantic, hierarchical, adaptive"),
+                          "Options: recursive, semantic, hierarchical, adaptive, "
+                          "speaker_split, row_based"),
     ] = None,
     # Chunk parameters
     chunk_size: Annotated[
@@ -434,7 +435,9 @@ def evaluate(
     models = model or ["sentence-transformers/all-MiniLM-L6-v2"]
     sizes = sorted({s for s in (chunk_size or [512]) if s > 0}) or [512]
     strategies = strategy or ["recursive", "semantic", "hierarchical", "adaptive"]
-    valid_strategies = {"recursive", "semantic", "hierarchical", "adaptive"}
+    valid_strategies = {
+        "recursive", "semantic", "hierarchical", "adaptive", "speaker_split", "row_based",
+    }
     for s in strategies:
         if s not in valid_strategies:
             console.print(

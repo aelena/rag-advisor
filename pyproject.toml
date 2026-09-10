@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ragadvisor"
-version = "0.3.1"
+version = "0.3.2"
 description = "RAG Configuration Adviser — rule-based recommendations for building RAG systems"
 readme = "README.md"
 license = "MIT"

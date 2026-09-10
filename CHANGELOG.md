@@ -4,6 +4,20 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-09-10
+
+### Added
+- Evaluation chunkers `speaker_split` (groups whole speaker turns of chat
+  logs and transcripts up to the chunk size) and `row_based` (header plus row
+  groups for CSV/TSV and other line-oriented tables). Files without speaker
+  markers or a consistent delimiter fall back to recursive splitting, so
+  mixed corpora still work. Available in `ragadvisor evaluate --strategy`.
+
+### Changed
+- `--validate` now evaluates the recommended `speaker_split` and `row_based`
+  strategies as themselves instead of approximating them with recursive
+  splitting.
+
 ## [0.3.1] - 2026-09-10
 
 ### Added

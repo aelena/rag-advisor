@@ -4,7 +4,7 @@
 [![Python 3.10 | 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/ragadvisor?label=PyPI)](https://pypi.org/project/ragadvisor/)
-[![Version](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.2-informational)](CHANGELOG.md)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
 [![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
@@ -308,6 +308,8 @@ ragadvisor evaluate ./docs ./queries.jsonl --backend pgvector --db-connection "p
 - **semantic** — Embedding-based boundary detection (splits at topic changes)
 - **hierarchical** — Parent-child chunks (index children, return parents)
 - **adaptive** — Per-file strategy selection (detects code/markdown/prose)
+- **speaker_split** — Whole speaker turns grouped up to the chunk size (chat logs, transcripts); files without speaker markers fall back to recursive
+- **row_based** — Header + row groups for CSV/TSV and other delimited tables; non-tabular files fall back to recursive
 
 ### Retrieval modes
 
@@ -421,7 +423,7 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--model NAME` | `-m` | Embedding model(s) to compare, repeatable (default: `all-MiniLM-L6-v2`) |
-| `--strategy NAME` | `-s` | Chunking strategies to compare (repeatable) |
+| `--strategy NAME` | `-s` | Chunking strategies to compare (repeatable): `recursive`, `semantic`, `hierarchical`, `adaptive`, `speaker_split`, `row_based` |
 | `--chunk-size N` | | Chunk size in characters; repeat to sweep several sizes (default: 512) |
 | `--chunk-overlap N` | | Overlap in characters for a single size (default: 50) |
 | `--overlap-ratio X` | | When sweeping, overlap = size × ratio (default: 0.1) |

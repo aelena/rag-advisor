@@ -24,8 +24,8 @@ _STRATEGY_MAP = {
     "recursive": "recursive",
     "hierarchical": "hierarchical",
     "language_aware": "adaptive",   # per-file code/markdown/prose detection
-    "speaker_split": "recursive",   # no dedicated eval implementation yet
-    "row_based": "recursive",
+    "speaker_split": "speaker_split",
+    "row_based": "row_based",
 }
 
 # The evaluation pipeline sizes chunks in characters; recommendations are in

@@ -15,7 +15,9 @@ from rag_adviser.evaluators.chunking_strategies import (
     chunk_hierarchical,
     chunk_per_file_adaptive,
     chunk_recursive,
+    chunk_rows,
     chunk_semantic,
+    chunk_speaker_turns,
     load_documents,
 )
 from rag_adviser.evaluators.ground_truth_loader import GroundTruthLoader, GroundTruthSet
@@ -55,6 +57,8 @@ class EvalConfig:
     embedding_models: list[str] = field(default_factory=list)
     trust_remote_code_models: list[str] = field(default_factory=list)
     max_successful_models: int | None = None
+    # Default comparison set; speaker_split and row_based are opt-in because they
+    # fall back to recursive splitting on files without turns / tables.
     strategies: list[str] = field(
         default_factory=lambda: ["recursive", "semantic", "hierarchical", "adaptive"]
     )
@@ -367,6 +371,10 @@ class EvalPipelineRunner:
             )
         elif strategy_name == "adaptive":
             return chunk_per_file_adaptive(documents, chunk_size=size, chunk_overlap=overlap)
+        elif strategy_name == "speaker_split":
+            return chunk_speaker_turns(documents, chunk_size=size)
+        elif strategy_name == "row_based":
+            return chunk_rows(documents, chunk_size=size)
         else:
             raise EvalPipelineError(f"Unknown chunking strategy: {strategy_name}")
 
