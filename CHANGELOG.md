@@ -4,6 +4,27 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-09-10
+
+### Added
+- `ragadvisor example-corpus DIR`: exports the 14 bundled RAG research notes
+  and 40 hand-written ground-truth queries so `--validate` can be tried in one
+  command before preparing your own evaluation set.
+- `ragadvisor bootstrap-queries CORPUS`: samples passages evenly across a
+  corpus and asks the configured LLM to write one specific question and short
+  answer per passage, producing a JSONL ground-truth file. Entries are marked
+  `synthetic: true`; the validator and evaluation report flag such metrics as
+  indicative. `--dry-run` shows the sampled passages without API calls.
+- JSON report format (`-f json`, included in `-f all`): the same content as
+  the YAML config as `rag_config.json`.
+
+### Changed
+- GitHub Actions workflows use the Node 24 action majors (checkout v7,
+  setup-python v7, upload/download-artifact v7/v8, create-pull-request v8,
+  action-gh-release v3), removing the Node 20 deprecation warnings.
+- README: refreshed pipeline overview and table of contents, documented the
+  new commands and the JSON format.
+
 ## [0.3.0] - 2026-09-09
 
 The advice-to-measurement release. Every recommendation the advisor makes can

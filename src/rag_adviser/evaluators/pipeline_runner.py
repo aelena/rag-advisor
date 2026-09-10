@@ -528,6 +528,11 @@ def generate_eval_report_markdown(report: EvalReport, output_dir: Path) -> Path:
     )
     if report.ground_truth:
         lines.append(f"**Evaluation Queries:** {report.ground_truth.query_count}  ")
+        if report.ground_truth.synthetic_count:
+            lines.append(
+                f"**Synthetic queries:** {report.ground_truth.synthetic_count} "
+                f"(LLM-generated; metrics are indicative)  "
+            )
         lines.append(f"**Ground Truth Source:** `{report.ground_truth.source_path}`  ")
     lines.append("")
     lines.append("---")
