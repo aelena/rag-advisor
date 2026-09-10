@@ -74,7 +74,8 @@ class TestStrategyMapping:
         assert map_strategy("recursive") == "recursive"
         assert map_strategy("hierarchical") == "hierarchical"
         assert map_strategy("language_aware") == "adaptive"
-        assert map_strategy("speaker_split") == "recursive"
+        assert map_strategy("speaker_split") == "speaker_split"
+        assert map_strategy("row_based") == "row_based"
         assert map_strategy("something_new") == "recursive"
 
 

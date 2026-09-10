@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -421,3 +422,127 @@ def _split_markdown(text: str, chunk_size: int, overlap: int) -> list[str]:
         result.append(current.strip())
 
     return result or [text.strip()]
+
+
+# ── Speaker-turn chunking (chat logs, transcripts) ──────────────────────────
+
+_SPEAKER_TURN_RE = re.compile(
+    r"^\s*(?:\[?\d{1,2}:\d{2}(?::\d{2})?\]?\s*)?"          # optional [12:34] timestamp
+    r"(?:<[^>]{1,40}>|[A-Za-z][\w .'\-]{0,40}:)\s",       # "<alice>" or "Alice:" / "user:"
+    re.MULTILINE,
+)
+
+
+def _split_turns(text: str) -> list[str]:
+    """Split a transcript into speaker turns; [] when no speaker markers are found."""
+    starts = [m.start() for m in _SPEAKER_TURN_RE.finditer(text)]
+    if len(starts) < 2:
+        return []
+    if starts[0] > 0:
+        starts.insert(0, 0)
+    turns = [text[a:b].strip() for a, b in zip(starts, starts[1:] + [len(text)], strict=False)]
+    return [t for t in turns if t]
+
+
+def chunk_speaker_turns(
+    documents: list[tuple[str, str]],
+    chunk_size: int = 512,
+) -> ChunkedCorpus:
+    """Speaker-turn chunking for chat logs and transcripts.
+
+    Consecutive turns are grouped until ``chunk_size`` characters is reached;
+    a turn is never split. Files without detectable speaker markers fall back
+    to recursive splitting so mixed corpora still work.
+    """
+    chunks: list[Chunk] = []
+    for filename, text in documents:
+        turns = _split_turns(text)
+        if not turns:
+            parts = _recursive_split(text, ["\n\n", "\n", ". ", " "], chunk_size, 0)
+            fallback = True
+        else:
+            parts, current = [], ""
+            for turn in turns:
+                if current and len(current) + len(turn) + 1 > chunk_size:
+                    parts.append(current)
+                    current = turn
+                else:
+                    current = f"{current}\n{turn}" if current else turn
+            if current:
+                parts.append(current)
+            fallback = False
+        for i, part in enumerate(parts):
+            chunks.append(Chunk(
+                text=part,
+                source_file=filename,
+                chunk_index=i,
+                strategy="speaker_split",
+                metadata={"source": filename, "chunk_index": i,
+                          "speaker_turns": not fallback},
+            ))
+    return ChunkedCorpus(
+        strategy_name="speaker_split",
+        chunks=chunks,
+        description=f"Speaker-turn grouping (max {chunk_size} chars per chunk)",
+    )
+
+
+# ── Row-based chunking (CSV/TSV and other line-oriented tables) ─────────────
+
+
+def _detect_delimiter(lines: list[str]) -> str | None:
+    """Pick the delimiter most lines agree on; None when the text is not tabular."""
+    for delim in ("\t", "|", ",", ";"):
+        counts = [ln.count(delim) for ln in lines]
+        with_delim = [c for c in counts if c >= 1]
+        if len(with_delim) < max(3, int(0.6 * len(lines))):
+            continue
+        common = Counter(with_delim).most_common(1)[0][1]
+        if common / len(with_delim) >= 0.5:
+            return delim
+    return None
+
+
+def chunk_rows(
+    documents: list[tuple[str, str]],
+    chunk_size: int = 512,
+) -> ChunkedCorpus:
+    """Row-based chunking for tabular files.
+
+    Rows are grouped so that header + rows stays under ``chunk_size``
+    characters, and every chunk starts with the header row so each is
+    self-describing. Non-tabular files fall back to recursive splitting.
+    """
+    chunks: list[Chunk] = []
+    for filename, text in documents:
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        delim = _detect_delimiter(lines) if len(lines) >= 3 else None
+        if delim is None:
+            parts = _recursive_split(text, ["\n\n", "\n", ". ", " "], chunk_size, 0)
+            meta = {"tabular": False}
+        else:
+            header, rows = lines[0], lines[1:]
+            parts, current = [], []
+            budget = max(chunk_size - len(header) - 1, len(header))
+            for row in rows:
+                if current and sum(len(r) + 1 for r in current) + len(row) > budget:
+                    parts.append("\n".join([header, *current]))
+                    current = [row]
+                else:
+                    current.append(row)
+            if current:
+                parts.append("\n".join([header, *current]))
+            meta = {"tabular": True, "delimiter": delim, "header": header[:200]}
+        for i, part in enumerate(parts):
+            chunks.append(Chunk(
+                text=part,
+                source_file=filename,
+                chunk_index=i,
+                strategy="row_based",
+                metadata={"source": filename, "chunk_index": i, **meta},
+            ))
+    return ChunkedCorpus(
+        strategy_name="row_based",
+        chunks=chunks,
+        description=f"Header + row groups (max {chunk_size} chars per chunk)",
+    )

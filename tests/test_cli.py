@@ -15,7 +15,7 @@ class TestCli:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
         assert "ragadvisor" in result.stdout
-        assert "0.3.1" in result.stdout
+        assert "0.3.2" in result.stdout
 
     def test_help(self):
         result = runner.invoke(app, ["--help"])
