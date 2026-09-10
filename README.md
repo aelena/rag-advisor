@@ -19,6 +19,10 @@ RAG Advisor is a CLI tool that analyzes your document corpus, collects your infr
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Profile Presets](#profile-presets)
+- [Cost, Footprint & Latency Estimates](#cost-footprint--latency-estimates)
+- [Multimodal Corpora](#multimodal-corpora)
+- [Use It From Claude Code](#use-it-from-claude-code)
+- [Validate Before You Build](#validate-before-you-build)
 - [LLM Verification](#llm-verification)
 - [Evaluation Pipeline](#evaluation-pipeline)
 - [Research Assistant](#research-assistant)
@@ -28,36 +32,43 @@ RAG Advisor is a CLI tool that analyzes your document corpus, collects your infr
 - [Recommendation Engine](#recommendation-engine)
 - [Output & Reports](#output--reports)
 - [Architecture](#architecture)
+- [Known Limitations](#known-limitations)
 - [Configuration](#configuration)
+- [Releasing](#releasing)
+- [Changelog](CHANGELOG.md)
 
 ## How It Works
 
-RAG Advisor runs an 11-step pipeline:
+RAG Advisor runs a pipeline of analysis, recommendation and (optionally) measurement steps:
 
 ```
- Input Collection ──► Document Analysis ──► Constraint Validation
+ Input Collection ──► Document & Modality Analysis ──► Approach Gate ──► Constraint Checks
          │
          ▼
- Approach Assessment ──► HuggingFace API Query ──► Model Scoring
+ Embedding Model Ranking ──► Chunking ──► Hybrid Decision ──► Vector DB ──► Retrieval Settings
          │
          ▼
- Chunking Strategy ──► Vector DB Selection ──► Retrieval Settings
+ Reranker Selection ──► Query Pipeline ──► Cost & Latency Estimates ──► Implementation Steps
          │
          ▼
- Query Pipeline ──► LLM Verification (optional) ──► Report Generation
+ Validation on your ground truth (optional) ──► LLM Verification (optional) ──► Reports
 ```
 
-1. **Collect user inputs** — corpus path, use case, deployment constraints, hardware limits, privacy requirements
-2. **Analyze documents** — detect languages, classify content types, count tokens, sample texts
-3. **Assess approach** — determine if RAG is the right approach; suggest alternatives if not
-4. **Validate constraints** — flag conflicts (e.g., air-gapped + paid API, edge deployment + large models)
-5. **Find embedding models** — query the HuggingFace Hub API for models from trusted organizations, score and rank them
-6. **Recommend chunking** — select a strategy (recursive, language-aware, code-based, speaker-split, row-based) with appropriate sizes
-7. **Select vector database** — score 8 database profiles against your scale, deployment, and privacy requirements
-8. **Configure retrieval** — set top-K, reranking, similarity threshold, and prompt strategy based on use case
-9. **Design query pipeline** — recommend query transformation techniques (HyDE, expansion, multi-query, condensation)
-10. **LLM verification** (optional) — send recommendations to an LLM for expert review
-11. **Generate reports** — produce professional reports in up to 3 formats with code snippets and implementation checklists
+1. **Collect user inputs** — corpus path, use case, deployment constraints, hardware limits, privacy, expected traffic
+2. **Analyze the corpus** — languages, content type with confidence, extrapolated token counts, and an inventory of non-text modalities (images, video, spreadsheets, CAD, scanned PDFs) with ingestion plans
+3. **Assess the approach** — decide whether RAG is right at all, or whether direct context, Text-to-SQL, full-text search or structured extraction fits better
+4. **Check constraints** — flag conflicts (air-gapped + paid API, edge + large models, sub-second latency on CPU)
+5. **Rank embedding models** — curated open models plus live HuggingFace Hub results, and hosted APIs when budget and privacy allow, scored by benchmark quality, hardware fit, languages, latency and license
+6. **Recommend chunking** — strategy and token sizes from content type, use case and the model's input window
+7. **Decide on hybrid retrieval** — BM25 + dense with reciprocal rank fusion when keyword queries or lexical content call for it
+8. **Select the vector database** — 8 profiles scored on scale, deployment, privacy, update frequency and native hybrid support
+9. **Configure retrieval** — top-K, similarity threshold, prompt strategy and generation settings per use case
+10. **Choose a reranker** — whether to rerank and which cross-encoder fits the latency budget, languages and chunk length
+11. **Design the query pipeline** — condensation, expansion, HyDE, multi-query, step-back, with LCEL snippets
+12. **Estimate cost and latency** — chunk count, index footprint, indexing cost or time, per-query latency by stage against the budget, monthly API spend
+13. **Validate** (optional) — run the recommended configuration on your corpus and ground-truth queries, compare models and chunk sizes, measure hybrid and reranking against a dense baseline
+14. **LLM verification** (optional) — send the recommendations (never your documents) to an LLM for a second opinion
+15. **Generate reports** — Markdown, HTML and YAML with code snippets, warnings and an implementation checklist
 
 ## Installation
 
