@@ -160,6 +160,13 @@ class RecommendationValidator:
 
         for model_id, err in report.model_errors.items():
             result.notes.append(f"Could not evaluate with {model_id}: {err[:200]}")
+        gt = report.ground_truth
+        if gt is not None and gt.synthetic_count:
+            result.notes.append(
+                f"{gt.synthetic_count} of {gt.query_count} evaluation queries are synthetic "
+                f"(LLM-generated); treat these metrics as indicative and add real user "
+                f"questions over time"
+            )
 
         primary = [
             r for r in report.strategy_results if not r.strategy_name.endswith("(dense baseline)")

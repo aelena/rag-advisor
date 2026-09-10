@@ -171,7 +171,7 @@ def run(
     output_format: Annotated[
         str,
         typer.Option("--format", "-f",
-                     help="Report format: markdown, html, yaml, all"),
+                     help="Report format: markdown, html, yaml, json, all"),
     ] = "all",
     output_dir: Annotated[
         Path,
@@ -292,7 +292,7 @@ def run(
             fmt = ReportFormat.ALL
 
         formats = (
-            [ReportFormat.MARKDOWN, ReportFormat.HTML, ReportFormat.YAML]
+            [ReportFormat.MARKDOWN, ReportFormat.HTML, ReportFormat.YAML, ReportFormat.JSON]
             if fmt == ReportFormat.ALL
             else [fmt]
         )
@@ -682,6 +682,136 @@ def presets() -> None:
     console.print()
     console.print(table)
     console.print("\n[dim]Usage: ragadvisor run --preset <name>[/]")
+
+
+@app.command("example-corpus")
+def example_corpus(
+    dest: Annotated[
+        Path,
+        typer.Argument(help="Directory to create (default: ./ragadvisor-example)"),
+    ] = Path("./ragadvisor-example"),
+) -> None:
+    """Export the bundled example corpus and its ground-truth queries.
+
+    Writes 14 short research notes on RAG to DEST/corpus and 40 hand-written
+    evaluation queries to DEST/queries.jsonl, so you can see --validate work
+    before preparing your own queries.
+    """
+    import shutil
+
+    import rag_adviser.research as research_pkg
+
+    src_dir = Path(research_pkg.__file__).parent
+    papers = sorted((src_dir / "papers").glob("*.md"))
+    gt = src_dir / "ground_truth.jsonl"
+    if not papers or not gt.exists():
+        console.print("[bold red]Error:[/] bundled example data is missing from this install")
+        raise typer.Exit(1)
+
+    corpus_dir = dest / "corpus"
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    for paper in papers:
+        shutil.copy2(paper, corpus_dir / paper.name)
+    shutil.copy2(gt, dest / "queries.jsonl")
+
+    console.print(
+        f"[bold green]Example written to:[/] {dest}\n"
+        f"  corpus/        {len(papers)} documents\n"
+        f"  queries.jsonl  {sum(1 for _ in gt.open(encoding='utf-8'))} ground-truth queries\n\n"
+        "[bold]Try it:[/]\n"
+        f"  ragadvisor run --no-interactive -d {corpus_dir} -u question_answering "
+        f"--privacy strict \\\n"
+        f"      --ground-truth-path {dest / 'queries.jsonl'} --validate "
+        f"--validate-models 2 --validate-chunk-sizes 256,512,1024\n\n"
+        "[dim]Validation needs the [eval] extra: pip install ragadvisor[eval][/]"
+    )
+
+
+@app.command("bootstrap-queries")
+def bootstrap_queries(
+    corpus: Annotated[Path, typer.Argument(help="Path to the document corpus")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Where to write the JSONL ground truth"),
+    ] = Path("./queries.synthetic.jsonl"),
+    n: Annotated[int, typer.Option("--n", help="Number of questions to generate")] = 30,
+    chunk_chars: Annotated[
+        int, typer.Option("--chunk-chars", help="Size of the passages shown to the LLM")
+    ] = 1200,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Only show which passages would be used; no LLM calls"),
+    ] = False,
+) -> None:
+    """Generate a synthetic evaluation set from your corpus with an LLM.
+
+    Samples passages evenly across the corpus and asks the configured LLM
+    (ANTHROPIC_API_KEY or OPENAI_API_KEY) to write one specific question and
+    short answer per passage. Entries are marked "synthetic": true so reports
+    flag the metrics as indicative. Only passages, never whole documents, are
+    sent to the API.
+    """
+    from rich.progress import Progress
+
+    from rag_adviser.evaluators.query_bootstrap import (
+        generate_queries,
+        sample_chunks,
+        write_jsonl,
+    )
+    from rag_adviser.llm.client import LLMClient, detect_llm_config
+
+    try:
+        chunks = sample_chunks(corpus, n=n, chunk_chars=chunk_chars)
+    except RagAdvisorError as e:
+        console.print(Panel(f"[bold red]Error:[/] {e}", border_style="red"))
+        raise typer.Exit(1) from e
+
+    files = sorted({c.source_file for c in chunks})
+    console.print(
+        f"[bold]Sampled {len(chunks)} passages[/] from {len(files)} files "
+        f"(~{chunk_chars} characters each)"
+    )
+    if dry_run:
+        for c in chunks:
+            preview = " ".join(c.text.split())[:90]
+            console.print(f"  [dim]{c.source_file}#{c.chunk_index}[/] {preview}...")
+        console.print("\n[dim]Dry run: no questions generated.[/]")
+        return
+
+    config = detect_llm_config()
+    if config is None:
+        console.print(Panel(
+            "[bold red]No LLM configured.[/] Set ANTHROPIC_API_KEY or OPENAI_API_KEY "
+            "(RAGADVISOR_LLM_MODEL / OPENAI_BASE_URL optional), or use --dry-run.",
+            border_style="red",
+        ))
+        raise typer.Exit(1)
+    console.print(f"[dim]Using {config.provider.value} / {config.model}[/]\n")
+
+    with Progress(console=console, transient=True) as progress:
+        task = progress.add_task("Writing questions...", total=len(chunks))
+        result = generate_queries(
+            LLMClient(config), chunks,
+            progress_cb=lambda done, total: progress.update(task, completed=done),
+        )
+
+    if not result.queries:
+        console.print(Panel(
+            f"[bold red]No questions generated[/] ({result.failures} failures). "
+            "Check the API key, model name and network.",
+            border_style="red",
+        ))
+        raise typer.Exit(1)
+
+    path = write_jsonl(result.queries, output)
+    console.print(
+        f"[bold green]Wrote {len(result.queries)} synthetic queries[/] to {path}"
+        + (f" [dim]({result.failures} passages skipped)[/]" if result.failures else "")
+        + "\n[dim]Entries carry \"synthetic\": true; reports will flag the metrics as "
+        "indicative. Review a sample and add real user questions over time.[/]\n\n"
+        f"[bold]Next:[/] ragadvisor run --no-interactive -d {corpus} "
+        f"--ground-truth-path {path} --validate"
+    )
 
 
 @app.command("refresh-catalogue")

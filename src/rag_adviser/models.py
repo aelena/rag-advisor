@@ -148,6 +148,7 @@ class ReportFormat(enum.Enum):
     MARKDOWN = "markdown"
     HTML = "html"
     YAML = "yaml"
+    JSON = "json"
     ALL = "all"
 
 

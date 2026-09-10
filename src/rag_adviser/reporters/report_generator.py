@@ -45,6 +45,7 @@ class ReportGenerator:
                 ReportFormat.MARKDOWN,
                 ReportFormat.HTML,
                 ReportFormat.YAML,
+                ReportFormat.JSON,
             ]
 
         generated: list[Path] = []
@@ -81,6 +82,10 @@ class ReportGenerator:
         elif fmt == ReportFormat.YAML:
             from rag_adviser.reporters.yaml_renderer import YamlRenderer
             return YamlRenderer().render(answers, recommendations, output_dir)
+
+        elif fmt == ReportFormat.JSON:
+            from rag_adviser.reporters.json_renderer import JsonRenderer
+            return JsonRenderer().render(answers, recommendations, output_dir)
 
         else:
             raise ReportGenerationError(f"Unknown report format: {fmt}")

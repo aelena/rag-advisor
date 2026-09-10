@@ -4,7 +4,7 @@
 [![Python 3.10 | 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/ragadvisor?label=PyPI)](https://pypi.org/project/ragadvisor/)
-[![Version](https://img.shields.io/badge/version-0.3.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
 [![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
@@ -98,6 +98,17 @@ pip install -e ".[all]"
 ```
 
 ## Quick Start
+
+### Try it in two commands
+
+```bash
+pip install "ragadvisor[eval]"
+ragadvisor example-corpus ./ragadvisor-example
+ragadvisor run --no-interactive -d ./ragadvisor-example/corpus -u question_answering --privacy strict \
+    --ground-truth-path ./ragadvisor-example/queries.jsonl --validate --validate-models 2
+```
+
+The example is a small corpus of 14 research notes on RAG with 40 hand-written questions. The second command analyses it, recommends a configuration, then measures that recommendation (two embedding models side by side) on those questions and reports hit rate, MRR and a verdict.
 
 ### Interactive mode (default)
 
@@ -221,6 +232,16 @@ ragadvisor run --no-interactive -d ./docs --use-case question_answering \
 - Hybrid retrieval and a local reranker, when recommended, are part of what gets measured. The same index is also queried dense-only, so the report states whether those stages actually helped on your data.
 - Verdicts: **strong** (hit rate ≥ 80%), **acceptable** (≥ 60%), **weak**. Weak results come with suggestions: raise top-k, add a reranker, enable hybrid search, or compare strategies with `ragadvisor evaluate`.
 - The interactive flow offers validation as soon as you provide a ground-truth path.
+
+### No evaluation queries yet? Bootstrap a synthetic set
+
+```bash
+export ANTHROPIC_API_KEY=...      # or OPENAI_API_KEY
+ragadvisor bootstrap-queries ./docs -o ./queries.synthetic.jsonl --n 30
+ragadvisor run --no-interactive -d ./docs --ground-truth-path ./queries.synthetic.jsonl --validate
+```
+
+`bootstrap-queries` samples passages evenly across the corpus and asks the LLM to write one specific question and short answer per passage. Only the sampled passages are sent to the API. Every entry is marked `"synthetic": true`, and the validator and evaluation report say so, because LLM-written questions are easier than real user questions and tend to overstate retrieval quality. Use them to get the loop running, then replace them with real questions as they come in. `--dry-run` shows the sampled passages without any API call.
 
 ## LLM Verification
 
@@ -391,7 +412,7 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--validate / --no-validate` | | Run the recommended configuration against the ground truth and report metrics |
 | `--validate-models N` | | With `--validate`, compare the top N recommended local embedding models on your data |
 | `--validate-chunk-sizes LIST` | | With `--validate`, also try these chunk sizes in tokens (e.g. `256,512,1024`) |
-| `--format FORMAT` | `-f` | `markdown`, `html`, `yaml`, `all` (default: `all`) |
+| `--format FORMAT` | `-f` | `markdown`, `html`, `yaml`, `json`, `all` (default: `all`) |
 | `--output DIR` | `-o` | Output directory (default: `./rag_report`) |
 | `--use-llm / --no-llm` | | Send recommendations to an LLM for verification |
 
@@ -425,6 +446,21 @@ Retrieves passages and sends them to an LLM to synthesize a coherent answer with
 | `--model NAME` | `-m` | Embedding model for retrieval |
 | `--top-k N` | `-k` | Number of results to retrieve (default: 5) |
 | `--use-llm / --no-llm` | | Synthesize answers with an LLM |
+
+### `ragadvisor example-corpus [DIR]`
+
+Exports the bundled example corpus (14 research notes on RAG) and 40 hand-written ground-truth queries to `DIR` (default `./ragadvisor-example`) and prints the `--validate` command to run against them.
+
+### `ragadvisor bootstrap-queries CORPUS`
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--output PATH` | `-o` | JSONL file to write (default: `./queries.synthetic.jsonl`) |
+| `--n N` | | Questions to generate (default: 30) |
+| `--chunk-chars N` | | Passage size shown to the LLM (default: 1200) |
+| `--dry-run` | | Show sampled passages only, no LLM calls |
+
+Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; see [LLM Verification](#llm-verification) for model overrides.
 
 ### `ragadvisor refresh-catalogue [--write]`
 
@@ -603,7 +639,7 @@ One strong or two medium signals trigger the recommendation. When hybrid is reco
 
 ## Output & Reports
 
-Reports are generated in up to 3 formats, written to the output directory (default: `./rag_report/`):
+Reports are generated in up to 4 formats, written to the output directory (default: `./rag_report/`):
 
 ### Markdown (`rag_report.md`)
 Human-readable report with all recommendations, reasoning, warnings, LLM verification (if enabled), and an implementation checklist.
@@ -614,11 +650,14 @@ Styled report generated from a Jinja2 template with inline CSS. Features respons
 ### YAML (`rag_config.yaml`)
 Machine-readable configuration file with all recommendations structured for programmatic consumption.
 
+### JSON (`rag_config.json`)
+The same content as the YAML config, for tools that prefer JSON.
+
 ## Architecture
 
 ```
 src/rag_adviser/
-├── cli.py                          # Typer CLI (run, evaluate, analyze, ask, presets, refresh-catalogue, version)
+├── cli.py                          # Typer CLI (run, evaluate, analyze, ask, presets, example-corpus, bootstrap-queries, refresh-catalogue, version)
 ├── catalogue_refresh.py            # MTEB score refresh from model cards
 ├── main.py                         # RAGAdviser orchestrator — coordinates the pipeline
 ├── models.py                       # Data models, enums, exceptions
@@ -634,7 +673,8 @@ src/rag_adviser/
 │   ├── chunking_strategies.py      # 4 chunking strategies (recursive, semantic, hierarchical, adaptive)
 │   ├── vector_store.py             # Abstract store + 4 backends (Chroma, FAISS, pgvector, sqlite-vec)
 │   ├── metrics.py                  # Hit Rate, MRR, Precision, Recall, NDCG
-│   ├── ground_truth_loader.py      # JSONL/CSV ground truth parser
+│   ├── ground_truth_loader.py      # JSONL/CSV ground truth parser (synthetic flag)
+│   ├── query_bootstrap.py          # LLM-generated synthetic evaluation queries
 │   ├── baseline.py                 # Baseline save/load/compare for CI regression
 │   ├── retrieval_modes.py          # BM25 index, RRF fusion, cross-encoder reranking
 │   └── validator.py                # --validate: measure recommendations on your data
@@ -661,11 +701,13 @@ src/rag_adviser/
 │   ├── markdown_renderer.py        # Markdown report renderer
 │   ├── html_renderer.py            # Jinja2-based HTML renderer
 │   ├── yaml_renderer.py            # Machine-readable YAML config
+│   ├── json_renderer.py            # Same config as JSON
 │   └── report_generator.py         # Multi-format report orchestrator
 ├── research/
 │   ├── knowledge_base.py           # Chunk, embed, and index research papers
 │   ├── assistant.py                # Interactive Q&A with optional LLM synthesis
-│   └── papers/                     # 14 curated knowledge base files
+│   ├── papers/                     # 14 curated knowledge base files (also the example corpus)
+│   └── ground_truth.jsonl          # 40 hand-written queries for the example corpus
 └── templates/
     ├── report.html.j2              # Jinja2 HTML template
     └── report.css                  # Inline stylesheet for HTML/PDF

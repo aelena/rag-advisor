@@ -22,6 +22,7 @@ class GroundTruthEntry:
     relevant_doc_ids: list[str] = field(default_factory=list)
     relevant_passages: list[str] = field(default_factory=list)
     expected_answer: str = ""
+    synthetic: bool = False  # LLM-generated (ragadvisor bootstrap-queries)
 
 
 @dataclass
@@ -42,6 +43,10 @@ class GroundTruthSet:
     @property
     def has_doc_ids(self) -> bool:
         return any(e.relevant_doc_ids for e in self.entries)
+
+    @property
+    def synthetic_count(self) -> int:
+        return sum(1 for e in self.entries if e.synthetic)
 
 
 class GroundTruthLoader:
@@ -115,6 +120,9 @@ class GroundTruthLoader:
 
             if "answer" in obj:
                 entry.expected_answer = str(obj["answer"])
+
+            if "synthetic" in obj:
+                entry.synthetic = bool(obj["synthetic"])
 
             entries.append(entry)
 
