@@ -59,6 +59,7 @@ class TestDecision:
         assert rec.enabled is True
         assert rec.model_id == "cross-encoder/ms-marco-MiniLM-L-6-v2"
         assert rec.estimated_latency_ms <= 150
+        assert rec.fetch_k <= 12  # short candidate list under a <500ms budget
 
     def test_fast_multilingual_cpu_cannot_fit(self) -> None:
         answers = _answers(

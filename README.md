@@ -105,10 +105,10 @@ pip install -e ".[all]"
 pip install "ragadvisor[eval]"
 ragadvisor example-corpus ./ragadvisor-example
 ragadvisor run --no-interactive -d ./ragadvisor-example/corpus -u question_answering --privacy strict \
-    --ground-truth-path ./ragadvisor-example/queries.jsonl --validate --validate-models 2
+    --ground-truth-path ./ragadvisor-example/queries.jsonl --validate
 ```
 
-The example is a small corpus of 14 research notes on RAG with 40 hand-written questions. The second command analyses it, recommends a configuration, then measures that recommendation (two embedding models side by side) on those questions and reports hit rate, MRR and a verdict.
+The example is a small corpus of 14 research notes on RAG with 40 hand-written questions. The second command analyses it, recommends a configuration, then measures that recommendation on those questions and reports hit rate, MRR and a verdict. Add `--validate-models 2` or `--validate-chunk-sizes 256,512,1024` to compare options; every extra model or size re-embeds the corpus and, when a reranker is recommended, reranks all queries, so allow several minutes per combination on a CPU.
 
 ### Interactive mode (default)
 

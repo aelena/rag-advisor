@@ -721,9 +721,11 @@ def example_corpus(
         "[bold]Try it:[/]\n"
         f"  ragadvisor run --no-interactive -d {corpus_dir} -u question_answering "
         f"--privacy strict \\\n"
-        f"      --ground-truth-path {dest / 'queries.jsonl'} --validate "
-        f"--validate-models 2 --validate-chunk-sizes 256,512,1024\n\n"
-        "[dim]Validation needs the [eval] extra: pip install ragadvisor[eval][/]"
+        f"      --ground-truth-path {dest / 'queries.jsonl'} --validate\n\n"
+        "[dim]Validation needs the [eval] extra: pip install ragadvisor[eval].\n"
+        "Add --validate-models 2 or --validate-chunk-sizes 256,512,1024 to compare "
+        "options; each extra model or size re-embeds the corpus (and reranks, when "
+        "recommended), so budget several minutes per combination on CPU.[/]"
     )
 
 

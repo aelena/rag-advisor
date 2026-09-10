@@ -103,6 +103,21 @@ class TestMetrics:
         # 2 out of 3 relevant docs found
         assert abs(result.recall_at_k - 2 / 3) < 0.01
 
+    def test_recall_counts_each_document_once(self) -> None:
+        """Several chunks from the same relevant document must not push recall past 1."""
+        result = evaluate_single_query(
+            retrieved_texts=["a1", "a2", "a3", "b", "c"],
+            retrieved_doc_ids=["a.txt", "a.txt", "a.txt", "b.txt", "c.txt"],
+            retrieved_scores=[0.9, 0.8, 0.7, 0.6, 0.5],
+            relevant_doc_ids=["a.txt"],
+            relevant_passages=[],
+            query="test",
+            k=5,
+        )
+        assert result.recall_at_k == 1.0
+        assert result.precision_at_k == 0.6  # 3 of 5 chunks relevant
+        assert result.hit is True and result.reciprocal_rank == 1.0
+
     def test_ndcg_perfect(self) -> None:
         """Perfect ordering should give NDCG = 1.0."""
         result = evaluate_single_query(
