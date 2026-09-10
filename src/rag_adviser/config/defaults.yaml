@@ -238,7 +238,9 @@ api_embedding_models:
 # 0-100 scale assembled from public BEIR/MIRACL-style results; use it to rank
 # options, not as a benchmark number. latency_ms_per_pair_cpu is a rough
 # per-(query, passage) cost on a modern CPU core at ~256 tokens; hosted APIs
-# use latency_ms per call instead.
+# use latency_ms per call instead. CPU figures are deliberately conservative
+# (measured on a laptop CPU; remote-code multilingual rerankers are far
+# slower than their parameter count suggests) - a GPU divides them by ~8.
 reranker_models:
   - model_id: cross-encoder/ms-marco-MiniLM-L-6-v2
     multilingual: false
@@ -246,7 +248,7 @@ reranker_models:
     max_tokens: 512
     license: apache-2.0
     quality_score: 55
-    latency_ms_per_pair_cpu: 4
+    latency_ms_per_pair_cpu: 12
     notes: Smallest viable English reranker; the only one that fits a <500ms budget on CPU
 
   - model_id: cross-encoder/ms-marco-MiniLM-L-12-v2
@@ -255,7 +257,7 @@ reranker_models:
     max_tokens: 512
     license: apache-2.0
     quality_score: 58
-    latency_ms_per_pair_cpu: 8
+    latency_ms_per_pair_cpu: 25
     notes: Slightly better than L-6 at twice the cost
 
   - model_id: mixedbread-ai/mxbai-rerank-base-v1
@@ -264,7 +266,7 @@ reranker_models:
     max_tokens: 512
     license: apache-2.0
     quality_score: 64
-    latency_ms_per_pair_cpu: 25
+    latency_ms_per_pair_cpu: 80
     notes: Strong English reranker with permissive license
 
   - model_id: mixedbread-ai/mxbai-rerank-large-v1
@@ -273,7 +275,7 @@ reranker_models:
     max_tokens: 512
     license: apache-2.0
     quality_score: 68
-    latency_ms_per_pair_cpu: 70
+    latency_ms_per_pair_cpu: 200
     notes: Top open English reranker; GPU or batch use
 
   - model_id: BAAI/bge-reranker-base
@@ -282,7 +284,7 @@ reranker_models:
     max_tokens: 512
     license: mit
     quality_score: 62
-    latency_ms_per_pair_cpu: 30
+    latency_ms_per_pair_cpu: 100
     notes: Chinese + English focus; solid general reranker
 
   - model_id: BAAI/bge-reranker-v2-m3
@@ -291,7 +293,7 @@ reranker_models:
     max_tokens: 8192
     license: mit
     quality_score: 70
-    latency_ms_per_pair_cpu: 90
+    latency_ms_per_pair_cpu: 300
     notes: Best open multilingual reranker; 8192-token inputs, pairs well with bge-m3
 
   - model_id: Alibaba-NLP/gte-multilingual-reranker-base
@@ -300,9 +302,9 @@ reranker_models:
     max_tokens: 8192
     license: apache-2.0
     quality_score: 66
-    latency_ms_per_pair_cpu: 30
+    latency_ms_per_pair_cpu: 400
     trust_remote_code: true
-    notes: Compact multilingual reranker with long inputs
+    notes: Compact multilingual reranker with long inputs; remote-code implementation is slow on CPU
 
   - model_id: jinaai/jina-reranker-v2-base-multilingual
     multilingual: true
@@ -310,7 +312,7 @@ reranker_models:
     max_tokens: 1024
     license: cc-by-nc-4.0
     quality_score: 66
-    latency_ms_per_pair_cpu: 28
+    latency_ms_per_pair_cpu: 300
     trust_remote_code: true
     notes: Fast multilingual reranker; non-commercial license unless purchased
 

@@ -94,6 +94,8 @@ def evaluate_single_query(
 
     # Build relevance vector: 1 if retrieved item is relevant, 0 otherwise
     relevance = []
+    found_docs: set[str] = set()       # distinct relevant documents hit
+    found_passages: set[int] = set()   # distinct relevant passages hit
     for i in range(min(k, len(retrieved_texts))):
         is_relevant = False
 
@@ -104,14 +106,15 @@ def evaluate_single_query(
             and retrieved_doc_ids[i] in relevant_doc_ids
         ):
             is_relevant = True
+            found_docs.add(retrieved_doc_ids[i])
 
         # Check passage containment match
         if relevant_passages and i < len(retrieved_texts):
             chunk_text = retrieved_texts[i].lower()
-            for passage in relevant_passages:
+            for p_idx, passage in enumerate(relevant_passages):
                 if passage.lower() in chunk_text or chunk_text in passage.lower():
                     is_relevant = True
-                    break
+                    found_passages.add(p_idx)
 
         relevance.append(1 if is_relevant else 0)
 
@@ -132,9 +135,11 @@ def evaluate_single_query(
     # Precision@k
     result.precision_at_k = sum(relevance[:k]) / k if k > 0 else 0.0
 
-    # Recall@k
+    # Recall@k: distinct relevant items found (several chunks of the same
+    # document count once), capped at 1.0.
     total_relevant = max(len(relevant_doc_ids), len(relevant_passages), 1)
-    result.recall_at_k = sum(relevance[:k]) / total_relevant
+    found = max(len(found_docs), len(found_passages))
+    result.recall_at_k = min(1.0, found / total_relevant)
 
     # NDCG@k
     result.ndcg_at_k = _ndcg(relevance, k)

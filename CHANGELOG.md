@@ -18,7 +18,16 @@ All notable changes to RAG Advisor. The format follows
 - JSON report format (`-f json`, included in `-f all`): the same content as
   the YAML config as `rag_config.json`.
 
+### Fixed
+- Recall@k could exceed 100% when several retrieved chunks came from the same
+  relevant document; distinct documents (or passages) are now counted once.
+
 ### Changed
+- Reranker CPU latency priors recalibrated after measuring real cross-encoder
+  cost (the remote-code multilingual rerankers run at hundreds of ms per pair
+  on CPU, not tens). Sub-second budgets now rerank a shorter candidate list
+  (10-12) so a small cross-encoder still fits; heavier rerankers are steered
+  to GPU or batch use.
 - GitHub Actions workflows use the Node 24 action majors (checkout v7,
   setup-python v7, upload/download-artifact v7/v8, create-pull-request v8,
   action-gh-release v3), removing the Node 20 deprecation warnings.

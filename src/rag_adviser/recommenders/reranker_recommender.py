@@ -147,6 +147,9 @@ class RerankerRecommender:
 
     @staticmethod
     def _fetch_k(retrieval: RetrievalRecommendation, answers: UserAnswers) -> int:
+        if answers.constraints.latency_budget == LatencyBudget.FAST:
+            # Sub-second budgets: rerank a short list so a small cross-encoder fits.
+            return min(max(2 * retrieval.top_k, 10), 12)
         base = max(4 * retrieval.top_k, 20)
         if answers.query_complexity == QueryComplexity.AGGREGATIVE:
             base = max(base, 40)
