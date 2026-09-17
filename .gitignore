@@ -58,3 +58,6 @@ src/rag_adviser/research/.cache/
 
 # Stray pip artefacts from unquoted version specs (e.g. a file literally named "=0.7.0")
 =*
+
+# Apuntes locales para retomar el proyecto (no forman parte del repo)
+_memoria/
