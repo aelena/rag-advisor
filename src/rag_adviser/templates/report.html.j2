@@ -269,6 +269,10 @@
     <li><strong>Reranker:</strong> <code>{{ r.rerank_model }}</code></li>
     {% endif %}
     <li><strong>Hybrid Search:</strong> {{ "Yes" if r.hybrid_search else "No" }}</li>
+    {% set qp_active = (r.query_preprocessing.items() | selectattr(1) | map(attribute=0) | list) %}
+    {% if r.query_preprocessing %}
+    <li><strong>Query preprocessing:</strong> {{ qp_active | join(", ") or "none" }}</li>
+    {% endif %}
 </ul>
 
 {% if r.hybrid_search %}

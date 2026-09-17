@@ -21,6 +21,10 @@ from rag_adviser.models import (
 # Modalities that need treatment beyond the text pipeline, in display order.
 _ORDER = ["scanned_pdf", "image", "spreadsheet", "presentation", "video", "audio", "cad", "other"]
 
+# Presentation formats python-pptx cannot open directly. Kept as a module
+# constant so both the recommender and its tests can import it.
+_LEGACY_PRESENTATION_EXTS = {".ppt", ".odp", ".key"}
+
 
 class ModalityRecommender:
     """Recommend ingestion strategies for every non-text modality present."""
@@ -55,6 +59,8 @@ class ModalityRecommender:
                 ext for ext, c in stats.file_types.items()
                 if c > 0 and _modality_of_extension(ext) == modality
             )
+            if modality == "presentation":
+                self._specialize_presentation(rec)
             if not (api_ok and paid) and rec.tools_hosted:
                 rec.notes.append(
                     "Hosted services listed for reference only: privacy/budget settings "
@@ -176,15 +182,21 @@ class ModalityRecommender:
 
     @staticmethod
     def _presentation(hosted: bool, gpu: bool, answers: UserAnswers) -> ModalityRecommendation:
+        # Ingestion steps are finalised in ``_specialize_presentation`` once the
+        # concrete extensions in the corpus are known; python-pptx only reads
+        # Office Open XML .pptx, while .ppt / .odp / .key need conversion first.
         return ModalityRecommendation(
             strategy="One chunk per slide: title + body text + speaker notes",
             ingestion=[
-                "Extract slide text and notes with python-pptx; keep slide number as metadata",
                 "Diagram-heavy slides: render to PNG and caption with a vision model, "
                 "append the caption to the slide chunk",
                 "Prefix each chunk with the deck title so isolated slides stay interpretable",
             ],
-            tools_local=["python-pptx", "LibreOffice headless (pptx -> pdf -> images)", "docling"],
+            tools_local=[
+                "python-pptx (Office Open XML .pptx only)",
+                "LibreOffice headless (convert legacy .ppt / .odp / .key to .pptx or PDF)",
+                "docling",
+            ],
             tools_hosted=["Claude / GPT-4o vision for slide image captions"],
             embedding="Text embedding of slide chunks",
             chunking="Per slide; merge very short consecutive slides",
@@ -192,6 +204,44 @@ class ModalityRecommender:
             notes=[],
             warnings=["Slides are terse; retrieval quality depends heavily on speaker notes and captions"],
         )
+
+    @staticmethod
+    def _specialize_presentation(rec: ModalityRecommendation) -> None:
+        """Adjust the presentation recommendation to match the actual extensions.
+
+        python-pptx (`pip install python-pptx`) only opens Office Open XML
+        `.pptx` files. Legacy `.ppt`, OpenDocument `.odp` and Apple `.key`
+        must be converted first (LibreOffice headless is the free option),
+        and this fact belongs in the ingestion steps and warnings — not in
+        an aside three sections away.
+        """
+        exts = set(rec.extensions)
+        ooxml_present = ".pptx" in exts
+        legacy = sorted(exts & _LEGACY_PRESENTATION_EXTS)
+        steps: list[str] = []
+        if ooxml_present:
+            steps.append(
+                "Extract slide text and notes from .pptx with python-pptx; "
+                "keep slide number as metadata"
+            )
+        if legacy:
+            joined = ", ".join(legacy)
+            steps.append(
+                f"Convert legacy formats ({joined}) to .pptx or PDF with "
+                "LibreOffice headless first (python-pptx cannot open them), "
+                "then extract slide text and notes"
+            )
+        for s in reversed(steps):
+            rec.ingestion.insert(0, s)
+        if legacy:
+            rec.warnings.append(
+                f"python-pptx only reads Office Open XML .pptx; "
+                f"{', '.join(legacy)} must be converted first"
+            )
+        if not ooxml_present and legacy:
+            # No .pptx present: python-pptx is only useful after conversion.
+            rec.pip_packages = [p for p in rec.pip_packages if p != "python-pptx"]
+            rec.pip_packages.append("python-pptx  # applied after LibreOffice conversion")
 
     @staticmethod
     def _video(hosted: bool, gpu: bool, answers: UserAnswers) -> ModalityRecommendation:

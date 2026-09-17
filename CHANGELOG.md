@@ -4,6 +4,24 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-09-16
+
+### Fixed
+- **Legacy presentations were routed to a tool that can't open them.** The
+  modality recommender pointed every `.ppt`, `.odp` and `.key` file at
+  `python-pptx`, which only reads Office Open XML `.pptx`. The presentation
+  recommendation now inspects the actual extensions in the corpus, prepends a
+  "convert with LibreOffice headless first" step when a legacy format is
+  present, and adds a warning that names the offending extensions.
+- **Query preprocessing silently lowercased text and stripped punctuation.**
+  `RetrievalRecommendation.query_preprocessing` used to default to
+  `{"lowercase": True, "remove_punctuation": True}` — invisible in the
+  Markdown/HTML reports, present in the YAML/JSON config, and actively
+  harmful for transformer bi-encoders (BGE, E5, GTE, MiniLM…) because it
+  destroys case-sensitive names, product codes and legal citations. The
+  default is now empty, and any preprocessing that is applied surfaces in
+  both the human-readable and machine-readable outputs.
+
 ## [0.3.2] - 2026-09-10
 
 ### Added

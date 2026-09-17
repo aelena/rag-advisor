@@ -8,6 +8,10 @@ Each test pins a behaviour that was previously wrong:
 - --preset with --no-interactive silently ignored every other flag
 - hosted embedding APIs were never recommended, even for paid_api budgets
 - the Anthropic client sent `temperature`, which current models reject
+
+0.3.3 review adds:
+- legacy .ppt routed to python-pptx (which can't open it)
+- silently defaulted query preprocessing to lowercase + strip punctuation
 """
 
 from __future__ import annotations
@@ -20,14 +24,17 @@ from rag_adviser.main import RAGAdviser
 from rag_adviser.models import (
     BudgetTier,
     ContentType,
+    DocumentStats,
     HardwareConstraints,
     PrivacyLevel,
     ReportFormat,
+    RetrievalRecommendation,
     UpdateFrequency,
     UseCase,
     UserAnswers,
 )
 from rag_adviser.presets.manager import PresetManager
+from rag_adviser.recommenders.modality_recommender import ModalityRecommender
 from rag_adviser.recommenders.model_finder import HFModelFinder
 from rag_adviser.recommenders.vector_db_recommender import VectorDBRecommender
 
@@ -179,3 +186,68 @@ class TestModelFinderRegressions:
             ["en"], False, 3.0, hw, UseCase.QA,
         )
         assert any("commercial" in w for w in rec.warnings)
+
+
+class TestPresentationModalityRoutingRegressions:
+    """0.3.3: python-pptx only opens .pptx; legacy .ppt / .odp / .key need
+    LibreOffice conversion first. The report used to recommend python-pptx
+    for every presentation extension."""
+
+    @staticmethod
+    def _stats(extensions: dict[str, int]) -> DocumentStats:
+        return DocumentStats(
+            total_files=0,
+            total_files_all=sum(extensions.values()),
+            modalities={"presentation": sum(extensions.values())},
+            file_types=extensions,
+        )
+
+    def test_legacy_ppt_triggers_conversion_and_warning(self) -> None:
+        stats = self._stats({".ppt": 3})
+        rec = ModalityRecommender().recommend(stats, UserAnswers())[0]
+        assert rec.modality == "presentation"
+        assert any("LibreOffice" in step for step in rec.ingestion), rec.ingestion
+        assert any(".ppt" in w and "python-pptx" in w for w in rec.warnings)
+
+    def test_pptx_only_does_not_warn_about_conversion(self) -> None:
+        stats = self._stats({".pptx": 3})
+        rec = ModalityRecommender().recommend(stats, UserAnswers())[0]
+        assert any("python-pptx" in step for step in rec.ingestion), rec.ingestion
+        assert not any(
+            "must be converted" in w or "cannot open" in w for w in rec.warnings
+        ), rec.warnings
+
+    def test_mixed_pptx_and_legacy_covers_both_paths(self) -> None:
+        stats = self._stats({".pptx": 1, ".ppt": 1, ".odp": 1})
+        rec = ModalityRecommender().recommend(stats, UserAnswers())[0]
+        assert any("python-pptx" in step for step in rec.ingestion)
+        assert any("LibreOffice" in step for step in rec.ingestion)
+
+
+class TestRetrievalDefaultRegressions:
+    """0.3.3: RetrievalRecommendation used to lowercase queries and strip
+    punctuation by default. That is wrong for transformer bi-encoders and
+    was invisible in the human-readable report."""
+
+    def test_query_preprocessing_default_is_empty(self) -> None:
+        assert RetrievalRecommendation().query_preprocessing == {}
+
+    def test_preprocessing_when_set_surfaces_in_markdown(self, tmp_path: Path) -> None:
+        corpus = tmp_path / "docs"
+        corpus.mkdir()
+        (corpus / "a.txt").write_text(PROSE, encoding="utf-8")
+        answers = UserAnswers(
+            document_path=corpus,
+            constraints=HardwareConstraints(privacy=PrivacyLevel.STRICT),
+        )
+        recs = RAGAdviser().run(answers, tmp_path / "out", [ReportFormat.MARKDOWN])
+        recs.retrieval.query_preprocessing = {"lowercase": True, "remove_punctuation": False}
+        # Re-render to exercise the renderer directly.
+        from rag_adviser.reporters.markdown_renderer import MarkdownRenderer
+        out = tmp_path / "out2"
+        out.mkdir()
+        MarkdownRenderer().render(answers, recs, out)
+        md = (out / "rag_report.md").read_text("utf-8")
+        assert "Query preprocessing:" in md
+        assert "lowercase" in md
+        assert "remove_punctuation" not in md  # only truthy entries listed

@@ -355,6 +355,9 @@ class MarkdownRenderer:
         if r.rerank and r.rerank_model:
             lines.append(f"- **Reranker:** `{r.rerank_model}`")
         lines.append(f"- **Hybrid Search:** {'Yes' if r.hybrid_search else 'No'}")
+        if r.query_preprocessing:
+            active = ", ".join(sorted(k for k, v in r.query_preprocessing.items() if v))
+            lines.append(f"- **Query preprocessing:** {active or 'none'}")
         lines.append("")
 
         if r.hybrid_search:

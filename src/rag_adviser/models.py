@@ -315,9 +315,12 @@ class RetrievalRecommendation:
     hybrid_native: bool = False  # chosen vector DB supports hybrid natively
     hybrid_reasons: list[str] = field(default_factory=list)
     hybrid_code_snippet: str = ""
-    query_preprocessing: dict[str, bool] = field(
-        default_factory=lambda: {"lowercase": True, "remove_punctuation": True}
-    )
+    # Transformer bi-encoders (BGE, E5, GTE, MiniLM…) train on cased,
+    # punctuated text; lowercasing and stripping punctuation destroys
+    # information that matters for names, identifiers, product codes and
+    # legal citations. Default to no preprocessing; strategies that
+    # legitimately need it (e.g. legacy BM25-only pipelines) can opt in.
+    query_preprocessing: dict[str, bool] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
 
