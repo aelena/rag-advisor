@@ -293,12 +293,17 @@ class TestFormatTaxonomyRegressions:
 
 
 class TestErrorCostRegressions:
-    """0.6.0 Phase 8: ``error_cost`` on UserAnswers flips retrieval's
-    precision / recall balance so a "wrong answer is worse than no
-    answer" scenario doesn't silently share defaults with "always
-    answer" scenarios (review §12)."""
+    """error_cost sets calibration intent, not a raw cosine threshold.
 
-    def test_wrong_worse_tightens_threshold(self, tmp_path: Path) -> None:
+    0.6.0 wired the field to a hardcoded 0.80 / 0.0 similarity threshold
+    — the 2026-09-17 follow-up review correctly flagged this as
+    reintroducing the corpus-independent-threshold problem. 0.6.1 emits
+    a ``calibration_target`` and ``abstention_policy`` instead, and
+    tells the user to calibrate the numerical threshold against
+    evaluation data.
+    """
+
+    def test_wrong_worse_targets_precision_calibration(self, tmp_path: Path) -> None:
         from rag_adviser.models import ErrorCost
         answers = UserAnswers(
             use_case=UseCase.QA,
@@ -306,10 +311,12 @@ class TestErrorCostRegressions:
             error_cost=ErrorCost.WRONG_WORSE,
         )
         recs = RAGAdviser().run(answers, tmp_path, [ReportFormat.YAML])
-        assert recs.retrieval.similarity_threshold >= 0.80
+        assert recs.retrieval.calibration_target == "maximize_precision"
+        assert recs.retrieval.abstention_policy == "conservative"
         assert any("wrong_worse" in n for n in recs.retrieval.notes)
+        assert any("calibrate" in n.lower() for n in recs.retrieval.notes)
 
-    def test_no_answer_worse_drops_threshold_and_widens_topk(
+    def test_no_answer_worse_targets_recall_and_widens_topk(
         self, tmp_path: Path
     ) -> None:
         from rag_adviser.models import ErrorCost
@@ -319,7 +326,8 @@ class TestErrorCostRegressions:
             error_cost=ErrorCost.NO_ANSWER_WORSE,
         )
         recs = RAGAdviser().run(answers, tmp_path, [ReportFormat.YAML])
-        assert recs.retrieval.similarity_threshold == 0.0
+        assert recs.retrieval.calibration_target == "maximize_recall"
+        assert recs.retrieval.abstention_policy == "permissive"
         assert recs.retrieval.top_k >= 8
         assert any("no_answer_worse" in n for n in recs.retrieval.notes)
 

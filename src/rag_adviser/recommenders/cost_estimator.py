@@ -303,6 +303,37 @@ class CostEstimator:
             est.notes.append(
                 "No corpus analyzed: chunk count, footprint and indexing cost are unknown"
             )
+        # RAM feasibility: raise a CRITICAL warning when the in-memory
+        # index alone consumes most of the host's RAM, before the
+        # embedding model, reranker, application and OS. Silent
+        # under-provisioning was exactly what the 2026-09-17 review
+        # caught on the Books scan (15.4 GB index in 16 GB host, zero
+        # warnings).
+        ram_mb = float(answers.constraints.ram_gb) * 1024.0
+        if ram_mb > 0 and est.index_memory_mb > 0 and not sizing.on_disk_vectors:
+            share = est.index_memory_mb / ram_mb
+            if share >= 0.7:
+                overhead_mb = 2048  # rough allowance for OS + model + app
+                headroom_mb = ram_mb - est.index_memory_mb - overhead_mb
+                remedy = (
+                    "swap to `--sizing-preset gpu-fp16-quantized` or "
+                    "`--sizing-preset on-disk-mmap`, or add RAM"
+                )
+                est.warnings.append(
+                    f"CRITICAL: index alone consumes ~{share:.0%} of the "
+                    f"{answers.constraints.ram_gb:.0f} GB host RAM "
+                    f"({est.index_memory_mb:,.0f} MB of {int(ram_mb):,} MB), "
+                    f"leaving ~{max(headroom_mb, 0):,.0f} MB for the "
+                    f"embedding model, reranker, application, OS and file "
+                    f"cache. This configuration is not operationally viable; "
+                    f"{remedy}."
+                )
+            elif share >= 0.5:
+                est.notes.append(
+                    f"Index consumes ~{share:.0%} of host RAM "
+                    f"({est.index_memory_mb:,.0f} MB of {int(ram_mb):,} MB); "
+                    "leave headroom for the embedding model, reranker and OS."
+                )
         if not est.fits_latency_budget:
             over = est.query_latency_ms - est.latency_budget_ms
             heaviest = max(breakdown, key=breakdown.get) if breakdown else ""

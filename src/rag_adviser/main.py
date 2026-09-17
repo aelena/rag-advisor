@@ -255,9 +255,14 @@ class RAGAdviser:
             # Step 8b: Cost, footprint and latency estimates
             task = progress.add_task("Estimating cost and latency...", total=None)
             recommendations.estimates = CostEstimator().estimate(answers, recommendations)
-            recommendations.warnings.extend(
-                f"LATENCY: {w}" for w in recommendations.estimates.warnings
-            )
+            # Estimator warnings already carry their own severity prefix
+            # (LATENCY:, CRITICAL:) so callers can distinguish them; don't
+            # re-prefix here.
+            for w in recommendations.estimates.warnings:
+                if w.startswith(("LATENCY:", "CRITICAL:")):
+                    recommendations.warnings.append(w)
+                else:
+                    recommendations.warnings.append(f"LATENCY: {w}")
             progress.remove_task(task)
 
             # Step 9: Implementation steps
@@ -445,29 +450,43 @@ class RAGAdviser:
                 "need to gather items from across the corpus"
             )
 
-        # ``error_cost`` from the questionnaire flips the precision /
-        # recall balance: an abstention-preferring app wants precision
-        # (tighter threshold, fewer candidates, low temperature) while
-        # a must-always-answer app wants recall (higher top_k, permissive
-        # threshold). Review §12 flagged this as a hidden default.
+        # ``error_cost`` expresses whether wrong answers or missing
+        # answers hurt more. The 0.6.0 version turned this into a
+        # fixed cosine threshold (0.80 / 0.0) which the 2026-09-17
+        # follow-up review correctly flagged as reintroducing the
+        # false-precision problem: similarity distributions are
+        # model- and corpus-dependent, so no universal cosine value
+        # can encode "precision-first" or "recall-first". We now
+        # emit calibration *intent* (target + abstention policy) and
+        # move the numerical threshold decision to evaluation time.
+        # top_k is a knob the caller can still tune ahead of time, so
+        # a nudge there is defensible.
         from rag_adviser.models import ErrorCost as _ErrorCost
         if answers.error_cost == _ErrorCost.WRONG_WORSE:
-            rec.similarity_threshold = max(rec.similarity_threshold, 0.80)
+            rec.calibration_target = "maximize_precision"
+            rec.abstention_policy = "conservative"
             rec.notes.append(
-                "error_cost=wrong_worse: threshold raised and abstention "
-                "encouraged. Add an 'answer only when at least one "
-                "retrieved chunk exceeds the threshold, otherwise say "
-                "you don't know' clause to the generation prompt."
+                "error_cost=wrong_worse: calibrate the similarity threshold "
+                "against labelled positives and negatives to maximise "
+                "precision (accept lower recall). Add an 'answer only when "
+                "at least one retrieved chunk exceeds the calibrated "
+                "threshold, otherwise abstain' clause to the generation "
+                "prompt. Do NOT pick a universal cosine value — score "
+                "distributions vary by embedding model and corpus."
             )
         elif answers.error_cost == _ErrorCost.NO_ANSWER_WORSE:
-            rec.similarity_threshold = 0.0  # let everything through
+            rec.calibration_target = "maximize_recall"
+            rec.abstention_policy = "permissive"
             rec.top_k = max(rec.top_k, 8)
             rec.notes.append(
-                "error_cost=no_answer_worse: similarity threshold dropped "
-                "to 0 and top_k widened. The system now always attempts "
-                "an answer even from weak candidates; accept some "
+                "error_cost=no_answer_worse: calibrate the threshold to "
+                "maximise recall (accept lower precision) and widen top_k "
+                "so the generator always has candidates. The system will "
+                "attempt an answer even from weak candidates; accept some "
                 "hallucination risk in exchange for coverage."
             )
+        elif answers.error_cost == _ErrorCost.EQUAL:
+            rec.calibration_target = "balanced"
 
         return rec
 

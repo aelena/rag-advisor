@@ -358,7 +358,6 @@ class VectorDBRecommendation:
     category: str = "embedded"
     supports_metadata_filter: bool = True
     supports_hybrid_search: bool = False
-    estimated_capacity: str = ""
     library: str = ""
     code_snippet: str = ""
 
@@ -387,6 +386,15 @@ class RetrievalRecommendation:
     # legal citations. Default to no preprocessing; strategies that
     # legitimately need it (e.g. legacy BM25-only pipelines) can opt in.
     query_preprocessing: dict[str, bool] = field(default_factory=dict)
+    # High-level intent that must be turned into a numerical threshold
+    # by *calibration on evaluation data*, not by a fixed cosine value.
+    # Populated from ``UserAnswers.error_cost``. Empty when the user
+    # expresses no preference. Follow-up reviewer 2026-09-17 caught the
+    # 0.6.0 version that hard-coded 0.80 for wrong_worse — that
+    # reintroduced the corpus-independent-threshold problem the review
+    # had originally raised in §2.
+    calibration_target: str = ""       # maximize_precision | maximize_recall | balanced | ""
+    abstention_policy: str = ""        # conservative | permissive | ""
     notes: list[str] = field(default_factory=list)
 
 

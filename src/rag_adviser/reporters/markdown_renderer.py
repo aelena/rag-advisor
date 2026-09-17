@@ -332,8 +332,6 @@ class MarkdownRenderer:
         lines.append(f"- **Category:** {db.category}")
         lines.append(f"- **Reason:** {db.reason}")
         lines.append(f"- **Library:** `{db.library}`")
-        if db.estimated_capacity:
-            lines.append(f"- **Capacity:** {db.estimated_capacity}")
         lines.append(
             f"- **Metadata filtering:** {'Yes' if db.supports_metadata_filter else 'No'}"
         )
@@ -371,6 +369,10 @@ class MarkdownRenderer:
         if r.query_preprocessing:
             active = ", ".join(sorted(k for k, v in r.query_preprocessing.items() if v))
             lines.append(f"- **Query preprocessing:** {active or 'none'}")
+        if r.calibration_target:
+            lines.append(f"- **Calibration target:** {r.calibration_target}")
+        if r.abstention_policy:
+            lines.append(f"- **Abstention policy:** {r.abstention_policy}")
         lines.append("")
 
         if r.hybrid_search:

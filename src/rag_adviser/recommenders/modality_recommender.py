@@ -242,9 +242,18 @@ class ModalityRecommender:
                 f"{', '.join(legacy)} must be converted first"
             )
         if not ooxml_present and legacy:
-            # No .pptx present: python-pptx is only useful after conversion.
+            # No .pptx present: python-pptx is only useful after
+            # conversion. Note in ``notes`` (surfaced separately in the
+            # report) rather than embedding a ``#`` in a pip package
+            # string — the checklist concatenates packages into a real
+            # shell command and ``#`` starts a comment, silently
+            # dropping every subsequent package.
             rec.pip_packages = [p for p in rec.pip_packages if p != "python-pptx"]
-            rec.pip_packages.append("python-pptx  # applied after LibreOffice conversion")
+            rec.pip_packages.append("python-pptx")
+            rec.notes.append(
+                "python-pptx is only useful after LibreOffice converts "
+                "your .ppt / .odp / .key files to .pptx"
+            )
 
     @staticmethod
     def _video(hosted: bool, gpu: bool, answers: UserAnswers) -> ModalityRecommendation:
@@ -375,4 +384,34 @@ def _modality_of_extension(ext: str) -> str:
         return "unsupported"
     if ext == ".pdf":
         return "scanned_pdf"  # only used for extension listing of that pseudo-modality
+    # Since 0.5.0 the document analyzer treats a wider set of formats as
+    # first-class text documents. Those extensions have to be excluded
+    # from "other" here or the report shows every .epub / .docx / .rtf
+    # as a member of the ``Other`` bucket even when they contain no
+    # actual files (the 2026-09-17 follow-up review caught this).
+    if ext in _RECOGNISED_TEXT_EXTS:
+        return "document"
     return "other"
+
+
+# Kept in sync with document_analyzer's _DOC_EXTENSIONS. Duplicated here
+# rather than imported so recommender-side tests can run without the
+# analyzer's heavy dependencies. If either list changes, both must
+# change — the ``test_other_bucket_excludes_recognised_text_formats``
+# regression pins the sync.
+_RECOGNISED_TEXT_EXTS = {
+    # plain text / code / structured
+    ".txt", ".md", ".rst", ".csv", ".tsv", ".json", ".jsonl", ".xml",
+    ".yaml", ".yml",
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", ".cpp",
+    ".c", ".h", ".cs", ".rb", ".php", ".swift", ".kt", ".scala", ".r",
+    ".sql", ".sh", ".bash",
+    ".docx",
+    # rich text formats promoted to text in 0.5.0
+    ".epub", ".mobi",
+    ".doc", ".rtf",
+    ".html", ".htm",
+    ".djvu", ".djv",
+    ".chm",
+    ".opf",
+}

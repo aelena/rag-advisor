@@ -230,9 +230,8 @@ class YamlRenderer:
                 "library": db.library,
                 "supports_metadata_filter": db.supports_metadata_filter,
                 "supports_hybrid_search": db.supports_hybrid_search,
-                # Reason and capacity used to live only in the human report.
+                # Reason used to live only in the human report.
                 "reason": db.reason,
-                "estimated_capacity": db.estimated_capacity,
             }
 
         # Retrieval
@@ -243,6 +242,8 @@ class YamlRenderer:
                 "similarity_threshold": r.similarity_threshold,
                 "rerank": r.rerank,
                 "query_preprocessing": r.query_preprocessing,
+                "calibration_target": r.calibration_target,
+                "abstention_policy": r.abstention_policy,
             }
             if r.rerank and r.rerank_model:
                 config["retrieval"]["rerank_model"] = r.rerank_model

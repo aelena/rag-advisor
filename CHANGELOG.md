@@ -4,6 +4,78 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-09-17
+
+Follow-up review of 0.6.0 (`_memoria/rag_advisor_followup_review_v060.md`)
+caught concrete bugs and one design regression that this patch closes.
+
+### Fixed
+- **HTML report was missing `citation_granularity` and `error_cost`**
+  from its User Input Summary, while Markdown / YAML / JSON had them.
+  The equivalence test used a hand-curated field list and did not
+  catch this. Test now walks every enum on `UserAnswers` and asserts
+  its string value appears in every rendered format, so any future
+  questionnaire field must be threaded through all four renderers or
+  fail loudly.
+- **`pip install` line silently dropped packages after `python-pptx`.**
+  0.3.3 wrote `"python-pptx  # applied after LibreOffice conversion"`
+  into the pip_packages list; the checklist concatenates those into a
+  shell command where `#` starts a comment, so `faster-whisper` and
+  any following package would not be installed by a copy-paste. The
+  explanatory text is now a separate note; pip_packages contain
+  package names only.
+- **"Other" modality's extension list included recognised text
+  formats.** `_modality_of_extension` in the modality recommender
+  defaulted to `"other"` for unknown extensions and did not know
+  about the 0.5.0 text-format promotion, so `.epub` / `.docx` /
+  `.mobi` / `.rtf` / `.html` / `.djvu` / `.chm` / `.opf` were listed
+  as members of the Other bucket even when zero files actually landed
+  there. Recognised text extensions now short-circuit to `"document"`.
+- **`estimated_capacity: "~100,000,000 documents"`** removed from the
+  machine config schema. The 0.4.0 release softened the *reason*
+  string but forgot the field. Delete it: real capacity depends on
+  vector dimension, HNSW parameters and storage mode, which is what
+  `--sizing-preset` encodes.
+- **Missing RAM feasibility warning.** The 0.6.0 Books report showed
+  a 15.4 GB index on a 16 GB host with an empty warnings list. When
+  `index_memory_mb >= 70%` of `ram_gb × 1024` and vectors aren't
+  mmap'd on-disk, the cost estimator now raises a `CRITICAL:` warning
+  naming the shortfall and pointing at `--sizing-preset
+  gpu-fp16-quantized` or `--sizing-preset on-disk-mmap`. 50–70% share
+  emits a softer note.
+- **Chunking wording caught up with 0.4.0's other softening.**
+  `"Smaller chunks preferred for precise Q&A retrieval"` (still
+  categorical) is replaced with "heuristic starting point; sweep
+  {256, 512, 1024} with `ragadvisor evaluate` on your own ground
+  truth". Summarization's larger-chunk note gets the same treatment.
+
+### Changed
+- **`error_cost` sets calibration intent, not a raw threshold.** The
+  0.6.0 wiring turned `wrong_worse` into `similarity_threshold >=
+  0.80` and `no_answer_worse` into `similarity_threshold == 0.0`.
+  The follow-up review correctly flagged this as the same
+  false-precision problem the review had originally raised: similarity
+  distributions are model- and corpus-dependent, so no universal
+  cosine value encodes "precision-first". `RetrievalRecommendation`
+  now carries `calibration_target` (`maximize_precision` /
+  `maximize_recall` / `balanced`) and `abstention_policy`
+  (`conservative` / `permissive`); the actual numerical threshold is
+  the user's calibration output, not a hardcoded default. Both fields
+  render in Markdown / HTML / YAML / JSON when set. `top_k` is still
+  nudged upward for `no_answer_worse` — that's a knob a caller can
+  legitimately preset ahead of evaluation.
+
+### Not addressed here
+- **`confidence: 85%` still reads probabilistic** — the reviewer
+  suggests renaming to `heuristic_fit_score` or `signals_matched: 5/5`.
+  Sensible, but deferred pending a decision on whether to keep the
+  field name (breaking JSON/YAML consumers) or add a sibling field.
+- **Reranker still surfaces an incoherent compromise** on CPU +
+  moderate latency instead of proposing alternative coherent
+  configurations (shorter chunks / larger reranker window / no
+  rerank). The reviewer's "turn compatibility check into architecture
+  search" is a real feature; scoping it for a later release.
+
 ## [0.6.0] - 2026-09-17
 
 ### Changed

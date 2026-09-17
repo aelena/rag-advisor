@@ -97,11 +97,20 @@ class ChunkingRecommender:
         # Use case adjustments
         if use_case == UseCase.QA:
             base["chunk_size"] = min(base["chunk_size"], 512)
-            notes.append("Smaller chunks preferred for precise Q&A retrieval")
+            notes.append(
+                "chunk_size=512 is a heuristic starting point for precise Q&A; "
+                "retrieval granularity is corpus- and query-dependent. Sweep "
+                "{256, 512, 1024} with `ragadvisor evaluate --strategy` on your "
+                "own ground truth before committing."
+            )
         elif use_case == UseCase.SUMMARIZATION:
             base["chunk_size"] = int(base["chunk_size"] * 1.5)
             base["chunk_overlap"] = int(base["chunk_overlap"] * 1.5)
-            notes.append("Larger chunks preserve context for summarization")
+            notes.append(
+                "Larger chunks are a starting point for summarization; validate "
+                "against your own ground truth — coherent-context needs are "
+                "workload-dependent."
+            )
         elif use_case == UseCase.CODE:
             notes.append("Code-aware splitting preserves function/class boundaries")
         elif use_case == UseCase.LEGAL:

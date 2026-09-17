@@ -79,6 +79,8 @@
     <li><strong>Query type:</strong> {{ answers.query_type.value }}</li>
     <li><strong>Query complexity:</strong> {{ answers.query_complexity.value }}</li>
     <li><strong>Expected answer type:</strong> {{ answers.expected_answer_type.value }}</li>
+    <li><strong>Citation granularity:</strong> {{ answers.citation_granularity.value }}</li>
+    <li><strong>Error cost preference:</strong> {{ answers.error_cost.value }}</li>
     {% if answers.sample_queries %}
     <li><strong>Sample queries:</strong> {{ answers.sample_queries|join("; ") }}</li>
     {% endif %}
@@ -268,9 +270,6 @@
 <ul class="property-list">
     <li><strong>Category:</strong> {{ db.category }}</li>
     <li><strong>Reason:</strong> {{ db.reason }}</li>
-    {% if db.estimated_capacity %}
-    <li><strong>Capacity:</strong> {{ db.estimated_capacity }}</li>
-    {% endif %}
     <li><strong>Metadata filtering:</strong> {{ "Yes" if db.supports_metadata_filter else "No" }}</li>
     <li><strong>Hybrid search:</strong> {{ "Yes" if db.supports_hybrid_search else "No" }}</li>
 </ul>
@@ -298,6 +297,12 @@
     {% set qp_active = (r.query_preprocessing.items() | selectattr(1) | map(attribute=0) | list) %}
     {% if r.query_preprocessing %}
     <li><strong>Query preprocessing:</strong> {{ qp_active | join(", ") or "none" }}</li>
+    {% endif %}
+    {% if r.calibration_target %}
+    <li><strong>Calibration target:</strong> {{ r.calibration_target }}</li>
+    {% endif %}
+    {% if r.abstention_policy %}
+    <li><strong>Abstention policy:</strong> {{ r.abstention_policy }}</li>
     {% endif %}
 </ul>
 

@@ -24,11 +24,13 @@ from rag_adviser.models import (
     ApproachAssessment,
     BudgetTier,
     ChunkingRecommendation,
+    CitationGranularity,
     ContentType,
     CostEstimate,
     DeploymentTarget,
     DocumentStats,
     EmbeddingModelRecommendation,
+    ErrorCost,
     HardwareConstraints,
     HardwareProfile,
     LatencyBudget,
@@ -74,6 +76,10 @@ def _rich_answers() -> UserAnswers:
         query_type=QueryType.NATURAL_QUESTIONS,
         update_frequency=UpdateFrequency.NEVER,
         expected_queries_per_day=1000,
+        # Non-default values so the equivalence guard catches renderers
+        # that forget to surface these two 0.6.0 fields (as HTML did).
+        citation_granularity=CitationGranularity.PAGE,
+        error_cost=ErrorCost.WRONG_WORSE,
     )
 
 
@@ -122,7 +128,6 @@ def _rich_recs() -> Recommendations:
             reason="Handles the estimated chunk count and supports hybrid search",
             category="client-server",
             library="qdrant-client",
-            estimated_capacity="~100,000,000 documents",
             supports_hybrid_search=True,
         ),
         retrieval=RetrievalRecommendation(
@@ -230,3 +235,49 @@ class TestRendererEquivalence:
             assert "70,144" in text or "70144" in text, (
                 f"{fmt} is missing tokens_to_embed"
             )
+
+    def test_all_user_answers_enum_values_appear_in_every_format(
+        self, tmp_path: Path
+    ) -> None:
+        """Guard against future drift the 0.6.0 → 0.6.1 review caught.
+
+        Rather than pin a manually-curated list of "load-bearing" fields,
+        walk every enum on UserAnswers and assert its string value shows
+        up in every rendered format. When someone adds a new questionnaire
+        field, HTML/MD/YAML/JSON all fail together the moment they forget
+        one of the renderers.
+        """
+        import enum as _enum
+        import html as _html
+
+        answers = _rich_answers()
+        out = _render_all(tmp_path)
+        # HTML escapes ``<``, ``&`` etc. so ``<2s`` becomes ``&lt;2s``.
+        # Compare against the unescaped text — visually the reader sees
+        # the original string in the browser.
+        out = {fmt: _html.unescape(text) for fmt, text in out.items()}
+
+        # Non-default enum values a reader should see everywhere.
+        interesting: dict[str, str] = {}
+        for attr_name in dir(answers):
+            if attr_name.startswith("_"):
+                continue
+            value = getattr(answers, attr_name, None)
+            if isinstance(value, _enum.Enum):
+                interesting[attr_name] = value.value
+        # Constraints live on a sub-object.
+        for attr_name in dir(answers.constraints):
+            if attr_name.startswith("_"):
+                continue
+            value = getattr(answers.constraints, attr_name, None)
+            if isinstance(value, _enum.Enum):
+                interesting[f"constraints.{attr_name}"] = value.value
+
+        assert interesting, "test would not catch anything"
+
+        missing: list[str] = []
+        for fmt, text in out.items():
+            for path, expected in interesting.items():
+                if expected not in text:
+                    missing.append(f"{fmt} missing {path}={expected!r}")
+        assert not missing, "\n".join(missing)

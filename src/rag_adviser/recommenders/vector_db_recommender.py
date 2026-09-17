@@ -76,7 +76,6 @@ class VectorDBRecommender:
             category=best_db.get("category", "embedded"),
             supports_metadata_filter=best_db.get("supports_metadata_filter", True),
             supports_hybrid_search=best_db.get("supports_hybrid_search", False),
-            estimated_capacity=f"~{best_db.get('max_docs', 0):,} documents",
             library=best_db.get("library", ""),
             code_snippet=self._generate_code_snippet(best_db),
         )
