@@ -126,6 +126,60 @@ class TestDecision:
         # MiniLM (512 tokens) is the only fast pick; it must warn about truncation.
         assert any("truncated" in w for w in rec.warnings)
 
+    def test_coherent_multilingual_preferred_over_english_only(self) -> None:
+        # 0.4.0: moderate GPU budget with a multilingual corpus and
+        # 512-token chunks. The higher-quality English cross-encoder used
+        # to win by score despite failing both hard workload constraints
+        # (English-only, 512-token window). The coherence gate now sends
+        # it to fallback and picks a multilingual model with a wider
+        # window instead.
+        answers = _answers(
+            expected_answer_type=AnswerType.EXACT_PASSAGE,
+            constraints=HardwareConstraints(
+                latency_budget=LatencyBudget.MODERATE,
+                hardware=HardwareProfile.GPU_AVAILABLE,
+                vram_gb=16, ram_gb=32,
+            ),
+        )
+        rec = RerankerRecommender().recommend(
+            answers,
+            RetrievalRecommendation(top_k=5),
+            multilingual=True,
+            chunk_tokens=512,
+        )
+        assert rec.enabled is True
+        assert rec.multilingual is True
+        assert rec.max_tokens >= 544, rec.max_tokens
+        assert not any("truncated" in w for w in rec.warnings)
+        assert not any(
+            "English-only reranker" in w for w in rec.warnings
+        ), rec.warnings
+
+    def test_fallback_warns_when_no_coherent_reranker_fits(self) -> None:
+        # 0.4.0: moderate CPU budget with a multilingual corpus. All
+        # multilingual rerankers exceed the ~800ms allowance on CPU, so
+        # the fallback picks the best English-only model — but must
+        # advertise the missing coverage in warnings, not just in the
+        # scoring rationale.
+        answers = _answers(
+            expected_answer_type=AnswerType.EXACT_PASSAGE,
+            constraints=HardwareConstraints(
+                latency_budget=LatencyBudget.MODERATE,
+                hardware=HardwareProfile.CPU_ONLY,
+                ram_gb=16,
+            ),
+        )
+        rec = RerankerRecommender().recommend(
+            answers,
+            RetrievalRecommendation(top_k=5),
+            multilingual=True,
+            chunk_tokens=512,
+        )
+        assert rec.enabled is True
+        assert any(
+            "length and language coverage" in w.lower() for w in rec.warnings
+        ), rec.warnings
+
     def test_hybrid_is_a_signal(self) -> None:
         answers = _answers(expected_answer_type=AnswerType.SYNTHESIZED)
         rec = RerankerRecommender().recommend(

@@ -26,6 +26,14 @@
     {{ recommendations.approach.reasoning }}
     {% endif %}
 </div>
+{% if recommendations.approach.evidence %}
+<p><strong>Evidence:</strong></p>
+<ul>
+{% for e in recommendations.approach.evidence %}
+    <li>{{ e }}</li>
+{% endfor %}
+</ul>
+{% endif %}
 {% if not recommendations.approach.proceed_with_rag and recommendations.approach.alternative_description %}
 <h3>Alternative Approach</h3>
 <p>{{ recommendations.approach.alternative_description }}</p>
@@ -389,6 +397,16 @@
     {% if e.queries_per_day %}<tr><td>Monthly query-side API cost</td><td>~${{ '%.2f'|format(e.monthly_query_cost_usd) }} at {{ '{:,}'.format(e.queries_per_day) }} queries/day</td></tr>{% endif %}
 </table>
 {% if e.query_latency_breakdown_ms %}<p><strong>Latency breakdown (ms):</strong> {% for k, v in e.query_latency_breakdown_ms.items() %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% if e.query_latency_scenarios and e.query_latency_scenarios|length > 1 %}
+<h3>Retrieval-latency scenarios</h3>
+<p>Optional query-transformation techniques (HyDE, step-back, multi-query) are reported as a separate scenario rather than folded into the headline. Turning them on costs measurable latency; leaving them off means the baseline is the number to trust.</p>
+<table>
+    <tr><th>Scenario</th><th>Total (ms)</th><th>Description</th></tr>
+    {% for scenario in e.query_latency_scenarios %}
+    <tr><td>{{ scenario.name }}</td><td>{{ scenario.total_ms }}</td><td>{{ scenario.description }}</td></tr>
+    {% endfor %}
+</table>
+{% endif %}
 {% for w in e.warnings %}<div class="warning-box">{{ w }}</div>{% endfor %}
 {% for n in e.notes %}<div class="info-box">{{ n }}</div>{% endfor %}
 {% if e.assumptions %}<h3>Assumptions</h3><ul>{% for a in e.assumptions %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}

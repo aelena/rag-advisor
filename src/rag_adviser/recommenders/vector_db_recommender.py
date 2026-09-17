@@ -98,22 +98,23 @@ class VectorDBRecommender:
         deployment = db.get("deployment", [])
 
         # ── Scale fitness ──────────────────────────────────────────────────
+        # ``max_docs`` from the catalogue is a coarse order-of-magnitude
+        # figure, not a measurement: real capacity depends on vector
+        # dimension, HNSW parameters, payload size, replication and
+        # storage mode. Use it as a sanity check, not as the answer.
         if chunk_count <= max_docs:
             score += 0.25
             reasons.append(
-                f"Handles estimated {chunk_count:,} chunks "
-                f"(capacity: {max_docs:,})"
+                f"~{chunk_count:,} estimated chunks are well within the "
+                f"~{max_docs:,}-chunk order-of-magnitude limit for this backend; "
+                "measure real capacity for your dimension + HNSW config"
             )
         else:
             score -= 0.5
-            reasons.append(f"May not handle {chunk_count:,} chunks")
-
-        # Bonus for right-sized DB (not massively over-provisioned)
-        if max_docs > 0 and chunk_count > 0:
-            ratio = max_docs / chunk_count
-            if 1 <= ratio <= 100:
-                score += 0.1
-                reasons.append("Well-sized for your corpus")
+            reasons.append(
+                f"~{chunk_count:,} chunks may exceed the {max_docs:,}-chunk "
+                "order-of-magnitude limit for this backend"
+            )
 
         # ── Deployment compatibility ───────────────────────────────────────
         env_value = constraints.environment.value

@@ -480,6 +480,11 @@ class MarkdownRenderer:
         if a.reasoning:
             lines.extend([">", f"> {a.reasoning}"])
         lines.append("")
+        if a.evidence:
+            lines.append("**Evidence:**")
+            for e in a.evidence:
+                lines.append(f"- {e}")
+            lines.append("")
         if not a.proceed_with_rag and a.alternative_description:
             lines.extend([
                 "### Alternative Approach",
@@ -575,6 +580,26 @@ class MarkdownRenderer:
             lines.append("**Latency breakdown (ms):** " + ", ".join(
                 f"{k.replace('_', ' ')} {v}" for k, v in e.query_latency_breakdown_ms.items()
             ))
+            lines.append("")
+
+        if len(e.query_latency_scenarios) > 1:
+            lines.append("### Retrieval-latency scenarios")
+            lines.append("")
+            lines.append(
+                "Optional query-transformation techniques (HyDE, step-back, "
+                "multi-query) are reported as a separate scenario rather than "
+                "folded into the headline. Turning them on costs measurable "
+                "latency; leaving them off means the baseline is the number "
+                "to trust."
+            )
+            lines.append("")
+            lines.append("| Scenario | Total (ms) | Description |")
+            lines.append("|----------|-----------:|-------------|")
+            for scenario in e.query_latency_scenarios:
+                lines.append(
+                    f"| {scenario['name']} | {scenario['total_ms']} | "
+                    f"{scenario['description']} |"
+                )
             lines.append("")
         for w in e.warnings:
             lines.append(f"- **Warning:** {w}")

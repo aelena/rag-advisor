@@ -4,6 +4,73 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-09-17
+
+The epistemic shift promised in the 2026-09-16 review: rules with
+teeth, honesty about defaults, and separation of what the pipeline
+actually costs from what it might cost if the user opts in to
+experimental additions.
+
+### Changed
+- **Reranker coherence is now a hard gate, not a warning.** The
+  recommender used to pick the highest-scored model even when its
+  input window would truncate the chunks it was reranking or when it
+  didn't cover the corpus languages — warnings sat next to the pick
+  without altering it. Length + language coverage are now filtered
+  first; the top score among coherent fits wins. When no coherent
+  model fits the latency allowance the fallback still runs, but with
+  an explicit "no reranker satisfies both length and language
+  coverage" warning so the user knows what compromise they got.
+- **Approach confidence is derived, not literal.** The default RAG
+  branch used to report `confidence: 0.9` regardless of what the
+  inputs actually said. Confidence is now a function of how many
+  typical RAG signals (corpus size, token count, use case, content
+  type, multi-document) the inputs match, and an `evidence` list on
+  `ApproachAssessment` enumerates the concrete facts behind the
+  decision. A blind assessment lands in the 0.5–0.6 band; a
+  fully-populated one lands near 0.9. The evidence list renders in
+  every output format.
+- **Optional query transformations no longer inflate the headline
+  latency.** HyDE marked as OPTIONAL used to be silently added to the
+  "1400 ms retrieval latency" figure. The baseline scenario now
+  includes only the retrieval + rerank + required transforms
+  pipeline; optional/recommended transforms are reported as a second
+  scenario with its own total. Per-technique latency is preserved so
+  a reader can see "Baseline ~800 ms; Baseline + HyDE ~1400 ms" side
+  by side.
+- **Softer, less categorical wording** on the scalars the review
+  flagged: `top_k = 5` is framed as a heuristic starting point and
+  evaluation parameter, similarity thresholds are described as
+  model- and corpus-dependent and needing calibration, "low
+  temperature keeps answers factual and grounded" is corrected to
+  "low temperature reduces output variability; grounding comes from
+  retrieval quality, prompt constraints, citations and evaluation".
+  The vector-DB catalogue capacity is now framed as an
+  order-of-magnitude sanity check, not a measurement. The README's
+  "no guesswork, no trial-and-error" claim is replaced with the more
+  defensible "informed defaults, measurable hypotheses, targeted
+  experiments".
+
+### Added
+- `RerankerRecommender._coherent()` — encapsulates the length +
+  language hard checks and returns a list of blocker strings for
+  reporting.
+- `ApproachAssessment.evidence: list[str]` — the concrete facts that
+  drove the decision, surfaced in Markdown, HTML and YAML/JSON.
+- `CostEstimate.query_latency_scenarios: list[dict]` — the baseline
+  vs. baseline+optional-transforms latency table, rendered in every
+  format when a second scenario exists.
+- Per-technique `latency_ms` field on `QueryTransformationRecommendation.techniques`,
+  so the cost estimator can split required from optional cleanly.
+
+### Deferred
+- Full `Provenance` dataclass threaded through every numeric decision
+  (Phase 2 item 1 of the plan) — the wording changes above cover the
+  headline complaint without a schema-wide refactor. A structural
+  provenance model can land alongside the Phase 4 physical sizing
+  work, where the number of decisions to annotate is smaller and the
+  need is stronger.
+
 ## [0.3.4] - 2026-09-17
 
 ### Fixed

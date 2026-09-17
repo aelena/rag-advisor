@@ -326,13 +326,21 @@ class RetrievalRecommendation:
 
 @dataclass
 class ApproachAssessment:
-    """Assessment of whether RAG is the right approach."""
+    """Assessment of whether RAG is the right approach.
+
+    ``confidence`` is a coarse band, not a measurement: it summarises how
+    strongly the corpus + workload actually match the recommended
+    approach. ``evidence`` lists the concrete facts that triggered the
+    decision so a reader can inspect the reasoning rather than trusting
+    a single number.
+    """
 
     recommended_approach: RecommendedApproach = RecommendedApproach.RAG
     confidence: float = 1.0
     reasoning: str = ""
     alternative_description: str = ""
     proceed_with_rag: bool = True
+    evidence: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -429,9 +437,15 @@ class CostEstimate:
     monthly_reindex_cost_usd: float = 0.0
     monthly_query_cost_usd: float = 0.0
     queries_per_day: int = 0
-    # Latency
+    # Latency — headline is the baseline pipeline (retrieval + rerank
+    # when enabled). Optional/experimental additions (HyDE, hybrid
+    # weighting, decomposition) are reported alongside as separate
+    # scenarios rather than folded into the headline number: a reader
+    # who chooses not to enable HyDE should not read a latency figure
+    # that assumes they did.
     query_latency_ms: int = 0
     query_latency_breakdown_ms: dict[str, int] = field(default_factory=dict)
+    query_latency_scenarios: list[dict] = field(default_factory=list)
     latency_budget_ms: int = 0
     fits_latency_budget: bool = True
     # Context

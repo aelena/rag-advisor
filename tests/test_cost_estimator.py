@@ -111,6 +111,48 @@ class TestEstimates:
         assert any("No corpus" in n for n in e.notes)
         assert e.query_latency_ms > 0  # latency still estimable
 
+    def test_optional_hyde_split_into_its_own_scenario(self) -> None:
+        # 0.4.0: HyDE marked as OPTIONAL used to be folded into the
+        # headline latency number even though the reader may choose not
+        # to enable it. Now baseline excludes optional transforms; a
+        # second scenario tallies them separately.
+        answers = UserAnswers(document_stats=_stats())
+        recs = _recs(rerank_ms=500)
+        recs.query_transformation.techniques = [
+            {
+                "name": "HyDE (Hypothetical Document Embeddings)",
+                "priority": "optional",
+                "latency_ms": 600,
+            }
+        ]
+        recs.query_transformation.latency_impact_ms = 600
+        e = CostEstimator().estimate(answers, recs)
+        assert "query_transformation_optional" not in e.query_latency_breakdown_ms
+        assert len(e.query_latency_scenarios) == 2
+        baseline, extended = e.query_latency_scenarios
+        assert baseline["name"] == "baseline"
+        assert baseline["total_ms"] == e.query_latency_ms
+        assert extended["total_ms"] == baseline["total_ms"] + 600
+        assert "HyDE" in extended["description"]
+
+    def test_required_transforms_stay_in_baseline(self) -> None:
+        # Conversation Condensation is required for multi-turn queries;
+        # it belongs in the baseline latency, not in an optional scenario.
+        answers = UserAnswers(document_stats=_stats())
+        recs = _recs(rerank_ms=500)
+        recs.query_transformation.techniques = [
+            {
+                "name": "Conversation Condensation",
+                "priority": "required",
+                "latency_ms": 500,
+            }
+        ]
+        recs.query_transformation.latency_impact_ms = 500
+        e = CostEstimator().estimate(answers, recs)
+        assert "query_transformation_required" in e.query_latency_breakdown_ms
+        assert e.query_latency_breakdown_ms["query_transformation_required"] == 500
+        assert len(e.query_latency_scenarios) == 1  # no optional scenario
+
 
 class TestEndToEnd:
     def test_estimates_in_reports(self, tmp_path: Path) -> None:

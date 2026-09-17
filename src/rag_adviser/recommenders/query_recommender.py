@@ -26,6 +26,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "Conversation Condensation",
                 "priority": "required",
+                "latency_ms": 500,
                 "description": (
                     "Compress multi-turn chat history into a standalone query "
                     "before retrieval. Without this, the retriever sees only the "
@@ -44,6 +45,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "Query Expansion",
                 "priority": "recommended",
+                "latency_ms": 400,
                 "description": (
                     "Expand short keyword queries into fuller natural language "
                     "queries. Short queries have low semantic signal for embedding "
@@ -58,6 +60,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "HyDE (Hypothetical Document Embeddings)",
                 "priority": "recommended",
+                "latency_ms": 600,
                 "description": (
                     "Generate a hypothetical answer to the query, then embed "
                     "that answer instead of the query. This bridges the semantic "
@@ -67,6 +70,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "Multi-Query Decomposition",
                 "priority": "recommended",
+                "latency_ms": 600,
                 "description": (
                     "Decompose the complex query into sub-queries, retrieve for "
                     "each independently, then merge results. Essential for "
@@ -85,6 +89,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "Multi-Query Retrieval",
                 "priority": "recommended",
+                "latency_ms": 800,
                 "description": (
                     "Generate multiple query variants (one per entity being "
                     "compared), retrieve for each, then merge results. This "
@@ -99,6 +104,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "Broad Retrieval with Reranking",
                 "priority": "recommended",
+                "latency_ms": 300,
                 "description": (
                     "Retrieve a large initial set (top_k=20+), then rerank to "
                     "select the most relevant. Aggregative queries need breadth "
@@ -121,6 +127,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "HyDE (Hypothetical Document Embeddings)",
                 "priority": "optional",
+                "latency_ms": 600,
                 "description": (
                     "For exact passage retrieval, HyDE can improve recall by "
                     "generating a hypothetical passage that looks like the answer, "
@@ -142,6 +149,7 @@ class QueryRecommender:
             rec.techniques.append({
                 "name": "Step-Back Prompting",
                 "priority": "optional",
+                "latency_ms": 500,
                 "description": (
                     "Ask a more general version of the query first, retrieve "
                     "context for that, then answer the specific question. "

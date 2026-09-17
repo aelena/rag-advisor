@@ -153,11 +153,79 @@ class CostEstimator:
             breakdown["bm25_and_fusion"] = int(_lookup(_BM25_MS, est.chunk_count))
         if recs.reranker and recs.reranker.enabled:
             breakdown["rerank"] = int(recs.reranker.estimated_latency_ms)
-        if recs.query_transformation and recs.query_transformation.latency_impact_ms:
-            breakdown["query_transformation_llm"] = int(recs.query_transformation.latency_impact_ms)
 
-        est.query_latency_breakdown_ms = breakdown
+        # Required query transformations (e.g. multi-turn conversation
+        # condensation) must be in the baseline — the pipeline literally
+        # can't work without them. Optional / recommended techniques
+        # (HyDE for exact-passage retrieval, step-back prompting, …)
+        # are reported as separate scenarios so a reader who elects not
+        # to enable them isn't quoted a latency figure that assumed they
+        # did.
+        required_techniques: list[dict] = []
+        optional_techniques: list[dict] = []
+        if recs.query_transformation and recs.query_transformation.techniques:
+            for t in recs.query_transformation.techniques:
+                if t.get("priority") == "required":
+                    required_techniques.append(t)
+                else:
+                    optional_techniques.append(t)
+        if required_techniques:
+            breakdown["query_transformation_required"] = sum(
+                int(t.get("latency_ms", 0)) for t in required_techniques
+            )
+        elif (
+            recs.query_transformation
+            and recs.query_transformation.latency_impact_ms
+            and not recs.query_transformation.techniques
+        ):
+            # No per-technique metadata to split on — treat the reported
+            # latency as opaque and keep it in the baseline (this is the
+            # legacy behaviour, preserved so callers that construct a
+            # QueryTransformationRecommendation directly still get a
+            # populated breakdown).
+            breakdown["query_transformation_llm"] = int(
+                recs.query_transformation.latency_impact_ms
+            )
+
+        # Baseline scenario: what the user runs by default.
+        est.query_latency_breakdown_ms = dict(breakdown)
         est.query_latency_ms = sum(breakdown.values())
+        baseline_desc_parts = ["Dense retrieval"]
+        if recs.retrieval and recs.retrieval.hybrid_search:
+            baseline_desc_parts.append("hybrid fusion")
+        if recs.reranker and recs.reranker.enabled:
+            baseline_desc_parts.append("rerank")
+        if required_techniques:
+            baseline_desc_parts.append(
+                "required transforms ("
+                + ", ".join(t.get("name", "unnamed") for t in required_techniques)
+                + ")"
+            )
+        est.query_latency_scenarios = [
+            {
+                "name": "baseline",
+                "description": " + ".join(baseline_desc_parts),
+                "total_ms": est.query_latency_ms,
+                "breakdown_ms": dict(breakdown),
+                "includes_optional": [],
+            }
+        ]
+
+        if optional_techniques:
+            extended = dict(breakdown)
+            extended["query_transformation_optional"] = sum(
+                int(t.get("latency_ms", 0)) for t in optional_techniques
+            )
+            opt_names = [t.get("name", "unnamed") for t in optional_techniques]
+            est.query_latency_scenarios.append(
+                {
+                    "name": "with optional query transforms",
+                    "description": "Baseline + " + ", ".join(opt_names),
+                    "total_ms": sum(extended.values()),
+                    "breakdown_ms": extended,
+                    "includes_optional": opt_names,
+                }
+            )
         est.latency_budget_ms = _BUDGET_MS[answers.constraints.latency_budget]
         est.fits_latency_budget = est.query_latency_ms <= est.latency_budget_ms
         est.assumptions.append(

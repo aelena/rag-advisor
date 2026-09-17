@@ -51,12 +51,71 @@ class ApproachAnalyzer:
             if result is not None:
                 return result
 
-        # Default: RAG is appropriate
+        # Default: RAG. Confidence is derived from how many "typical RAG
+        # workload" signals the inputs actually match, so it degrades
+        # gracefully when the assessment is running with no corpus, an
+        # unusual content type, or a use case that only marginally fits.
+        return self._default_rag_assessment(answers, content_type)
+
+    def _default_rag_assessment(
+        self, answers: UserAnswers, content_type: ContentType
+    ) -> ApproachAssessment:
+        stats = answers.document_stats
+        use_case = answers.use_case
+        evidence: list[str] = []
+        signals_total = 5
+        signals_matched = 0
+
+        if stats and stats.total_files > SMALL_CORPUS_FILES:
+            signals_matched += 1
+            evidence.append(
+                f"Corpus has {stats.total_files:,} files — more than direct-context "
+                f"stuffing (>{SMALL_CORPUS_FILES}) can handle cleanly"
+            )
+        if stats and stats.total_tokens > CONTEXT_WINDOW_THRESHOLD:
+            signals_matched += 1
+            evidence.append(
+                f"Corpus tokens (~{stats.total_tokens:,}) exceed the "
+                f"{CONTEXT_WINDOW_THRESHOLD:,}-token direct-context threshold"
+            )
+        if use_case in (
+            UseCase.QA,
+            UseCase.SEARCH,
+            UseCase.SUMMARIZATION,
+            UseCase.LEGAL,
+            UseCase.CODE,
+        ):
+            signals_matched += 1
+            evidence.append(
+                f"Use case '{use_case.value}' is well-served by retrieve-then-generate"
+            )
+        if content_type != ContentType.TABULAR:
+            signals_matched += 1
+            evidence.append(
+                f"Content type '{content_type.value}' is prose-like (not tabular)"
+            )
+        if stats is None or stats.total_files > 1:
+            signals_matched += 1
+            evidence.append(
+                "Multiple documents to retrieve from"
+                if stats and stats.total_files > 1
+                else "No corpus analysed — assessment is based on user intent alone"
+            )
+
+        # 0.5 is the floor: even a zero-signal RAG default is not a
+        # rejection, it just means the tool is running blind.
+        confidence = round(0.5 + 0.4 * (signals_matched / signals_total), 2)
+        reasoning = (
+            f"Your scenario matches {signals_matched}/{signals_total} typical RAG "
+            "signals — starting point, not a measurement. Run `--validate` on "
+            "your own queries before committing to indexing."
+        )
         return ApproachAssessment(
             recommended_approach=RecommendedApproach.RAG,
-            confidence=0.9,
-            reasoning="Your scenario is well-suited for a RAG pipeline.",
+            confidence=confidence,
+            reasoning=reasoning,
             proceed_with_rag=True,
+            evidence=evidence,
         )
 
     def _effective_content_type(self, answers: UserAnswers) -> ContentType:

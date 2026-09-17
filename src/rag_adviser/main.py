@@ -327,8 +327,15 @@ class RAGAdviser:
             rec.max_tokens = 500
             rec.similarity_threshold = 0.7
             rec.prompt_strategy = "stuff"
-            rec.notes.append("5 chunks balances precision and recall for Q&A")
-            rec.notes.append("Low temperature (0.1) keeps answers factual and grounded")
+            rec.notes.append(
+                "top_k=5 is a heuristic starting point for Q&A; treat it as an "
+                "evaluation parameter and tune against your own ground truth"
+            )
+            rec.notes.append(
+                "Low temperature (0.1) reduces output variability. Grounding "
+                "comes from retrieval quality, prompt constraints, citations "
+                "and evaluation — not from the sampling temperature."
+            )
         elif answers.use_case == UseCase.SUMMARIZATION:
             rec.top_k = 10
             rec.temperature = 0.3
@@ -412,8 +419,10 @@ class RAGAdviser:
         elif answers.expected_answer_type == AnswerType.EXACT_PASSAGE:
             rec.similarity_threshold = max(rec.similarity_threshold, 0.75)
             rec.notes.append(
-                "High similarity threshold for exact passage retrieval — "
-                "precision over recall"
+                "Similarity threshold is set high for exact-passage retrieval "
+                "as a starting point. Similarity score distributions are "
+                "model- and corpus-dependent; calibrate the threshold against "
+                "labelled positive and negative examples before shipping."
             )
         elif answers.expected_answer_type == AnswerType.LIST_ENUMERATION:
             rec.top_k = max(rec.top_k, 10)

@@ -87,6 +87,7 @@ class YamlRenderer:
                 "proceed_with_rag": recs.approach.proceed_with_rag,
                 "confidence": recs.approach.confidence,
                 "reasoning": recs.approach.reasoning,
+                "evidence": list(recs.approach.evidence),
             }
             if not recs.approach.proceed_with_rag:
                 config["approach"]["alternative"] = recs.approach.alternative_description
@@ -283,6 +284,7 @@ class YamlRenderer:
                 "monthly_query_cost_usd": e.monthly_query_cost_usd,
                 "query_latency_ms": e.query_latency_ms,
                 "query_latency_breakdown_ms": e.query_latency_breakdown_ms,
+                "query_latency_scenarios": e.query_latency_scenarios,
                 "latency_budget_ms": e.latency_budget_ms if e.latency_budget_ms < 10**9 else None,
                 "fits_latency_budget": e.fits_latency_budget,
                 "assumptions": e.assumptions,

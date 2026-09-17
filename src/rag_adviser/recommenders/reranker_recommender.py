@@ -69,7 +69,7 @@ class RerankerRecommender:
             and constraints.budget == BudgetTier.PAID_API
         )
 
-        scored: list[tuple[float, dict, int, list[str], list[str]]] = []
+        scored: list[tuple[float, dict, int, list[str], list[str], bool, list[str]]] = []
         for model in self._catalogue:
             if model.get("provider", "huggingface") != "huggingface" and not api_allowed:
                 continue
@@ -77,10 +77,19 @@ class RerankerRecommender:
             score, reasons, warnings = self._score(
                 model, latency, allowance, max_size, multilingual, chunk_tokens
             )
-            scored.append((score, model, latency, reasons, warnings))
+            coherent, blockers = self._coherent(model, multilingual, chunk_tokens)
+            scored.append((score, model, latency, reasons, warnings, coherent, blockers))
 
         scored.sort(key=lambda s: s[0], reverse=True)
         fitting = [s for s in scored if s[2] <= allowance]
+        # Prefer models that pass hard workload constraints (input window
+        # covers query + chunk without truncation, multilingual coverage
+        # matches). The review of 2026-09-16 called out that these
+        # warnings used to appear *beside* the pick instead of altering
+        # it — so an English-only reranker with a 512-token window could
+        # win on a multilingual 512-token-chunk corpus while the report
+        # cheerfully truncated everything.
+        coherent_fitting = [s for s in fitting if s[5]]
 
         if not signals:
             rec.enabled = False
@@ -89,7 +98,7 @@ class RerankerRecommender:
                 "hybrid fusion, no precision-critical answer type)"
             )
             if scored:
-                self._fill_pick(rec, scored[0], suggested_only=True)
+                self._fill_pick(rec, scored[0][:5], suggested_only=True)
             return rec
 
         if not fitting:
@@ -101,11 +110,25 @@ class RerankerRecommender:
                 f"rerank offline/asynchronously or add a GPU"
             )
             if scored:
-                self._fill_pick(rec, scored[0], suggested_only=True)
+                self._fill_pick(rec, scored[0][:5], suggested_only=True)
             return rec
 
+        pick_pool = coherent_fitting or fitting
         rec.enabled = True
-        self._fill_pick(rec, fitting[0])
+        self._fill_pick(rec, pick_pool[0][:5])
+        if not coherent_fitting:
+            # No model satisfies both length and language coverage; the
+            # highest-scored fallback wins but we warn loudly.
+            _, _, _, _, _, _, blockers = fitting[0]
+            for b in blockers:
+                if b not in rec.warnings:
+                    rec.warnings.append(b)
+            rec.warnings.append(
+                "No reranker satisfies both length and language coverage for "
+                "this workload; the pick is the best available compromise. "
+                "Consider shorter chunks, a wider-window reranker, or a "
+                "multilingual reranker."
+            )
         rec.alternatives = [
             {
                 "model_id": m["model_id"],
@@ -114,10 +137,33 @@ class RerankerRecommender:
                 "quality_score": m.get("quality_score", 0),
                 "estimated_latency_ms": lat,
             }
-            for s, m, lat, _, _ in fitting[1:4]
+            for s, m, lat, _, _, _, _ in pick_pool[1:4]
         ]
         rec.code_snippet = self._snippet(rec)
         return rec
+
+    @staticmethod
+    def _coherent(model: dict, multilingual: bool, chunk_tokens: int) -> tuple[bool, list[str]]:
+        """Hard workload constraints — length and language coverage.
+
+        Returns ``(coherent, blockers)``: ``coherent`` is True when the
+        model can rerank the workload without silent compromises; the
+        list explains any failures for surfacing in warnings.
+        """
+        blockers: list[str] = []
+        max_tokens = int(model.get("max_tokens", 512))
+        # Reserve ~32 tokens for the query on top of the chunk.
+        if max_tokens < chunk_tokens + 32:
+            blockers.append(
+                f"Reranker input window ({max_tokens} tokens) is too small "
+                f"for {chunk_tokens}-token chunks + query; passages would truncate"
+            )
+        if multilingual and not model.get("multilingual"):
+            blockers.append(
+                "Reranker does not cover the corpus languages; non-English "
+                "passages would be scored by an English-only model"
+            )
+        return (not blockers), blockers
 
     # ── Decision signals ───────────────────────────────────────────────────
 

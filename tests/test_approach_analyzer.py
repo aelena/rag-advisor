@@ -142,3 +142,53 @@ class TestApproachAnalyzer:
         result = self.analyzer.assess(answers)
         # Tabular + summarization doesn't trigger text-to-sql
         assert result.recommended_approach != RecommendedApproach.TEXT_TO_SQL
+
+
+class TestApproachConfidenceIsDerived:
+    """0.4.0: the default RAG confidence used to be a hardcoded 0.9. It is
+    now derived from how many typical RAG signals the input matches, so
+    a blind assessment lands below a fully-populated one."""
+
+    def setup_method(self) -> None:
+        self.analyzer = ApproachAnalyzer()
+
+    def test_no_inputs_gives_a_low_confidence_default(self) -> None:
+        result = self.analyzer.assess(UserAnswers())
+        assert result.recommended_approach == RecommendedApproach.RAG
+        assert 0.5 <= result.confidence < 0.9
+        # No corpus means the assessment is running on user intent alone,
+        # and the report must say so.
+        assert any("No corpus" in e or "user intent" in e for e in result.evidence)
+
+    def test_full_workload_gives_near_max_confidence(self) -> None:
+        answers = UserAnswers(use_case=UseCase.QA)
+        answers.document_stats = DocumentStats(
+            total_files=1_000,
+            total_tokens=5_000_000,
+            detected_content_type=ContentType.PROSE,
+        )
+        result = self.analyzer.assess(answers)
+        assert result.recommended_approach == RecommendedApproach.RAG
+        assert result.confidence >= 0.85
+        # Evidence enumerates the matched signals.
+        assert result.evidence
+        assert any("token" in e.lower() for e in result.evidence)
+
+    def test_partial_workload_lands_between(self) -> None:
+        # Documents present but small corpus and unusual query type.
+        answers = UserAnswers(use_case=UseCase.QA, query_type=QueryType.SHORT_KEYWORDS)
+        answers.document_stats = DocumentStats(
+            total_files=25,               # >SMALL, +1
+            total_tokens=80_000,          # < CONTEXT_WINDOW_THRESHOLD, no signal
+            detected_content_type=ContentType.PROSE,
+        )
+        full = UserAnswers(use_case=UseCase.QA)
+        full.document_stats = DocumentStats(
+            total_files=1_000,
+            total_tokens=5_000_000,
+            detected_content_type=ContentType.PROSE,
+        )
+        blind = self.analyzer.assess(UserAnswers())
+        partial = self.analyzer.assess(answers)
+        best = self.analyzer.assess(full)
+        assert blind.confidence < partial.confidence < best.confidence
