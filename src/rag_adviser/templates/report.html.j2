@@ -14,18 +14,22 @@
     {% if answers.document_path %}Corpus: <code>{{ answers.document_path }}</code>{% endif %}
 </p>
 
-{# ── Approach Assessment ───────────────────────────────────────────── #}
-{% if recommendations.approach and not recommendations.approach.proceed_with_rag %}
+{# ── Approach Assessment (always rendered when present) ────────────── #}
+{% if recommendations.approach %}
 <h2>Approach Assessment</h2>
-<div class="warning-box">
+<div class="{{ 'warning-box' if not recommendations.approach.proceed_with_rag else 'property-list' }}">
     <strong>Recommended approach:</strong>
     {{ recommendations.approach.recommended_approach.value.replace('_', ' ').title() }}
     (confidence: {{ "%.0f"|format(recommendations.approach.confidence * 100) }}%)
+    {% if recommendations.approach.reasoning %}
     <br><br>
     {{ recommendations.approach.reasoning }}
+    {% endif %}
 </div>
+{% if not recommendations.approach.proceed_with_rag and recommendations.approach.alternative_description %}
 <h3>Alternative Approach</h3>
 <p>{{ recommendations.approach.alternative_description }}</p>
+{% endif %}
 <hr>
 {% endif %}
 
@@ -374,6 +378,7 @@
     {% if e.chunk_count %}
     <tr><td>Corpus tokens</td><td>{{ '~' if e.corpus_tokens_estimated }}{{ '{:,}'.format(e.corpus_tokens) }}</td></tr>
     <tr><td>Chunks to index</td><td>{{ '~' if e.corpus_tokens_estimated }}{{ '{:,}'.format(e.chunk_count) }}</td></tr>
+    <tr><td>Tokens to embed</td><td>{{ '~' if e.corpus_tokens_estimated }}{{ '{:,}'.format(e.tokens_to_embed) }}</td></tr>
     <tr><td>Index on disk</td><td>~{{ '%.0f'|format(e.index_size_mb) }} MB</td></tr>
     <tr><td>Vectors in RAM</td><td>~{{ '%.0f'|format(e.index_memory_mb) }} MB</td></tr>
     {% if e.embedding_is_api %}<tr><td>One-off embedding cost</td><td>~${{ '%.2f'|format(e.indexing_cost_usd) }}</td></tr>{% endif %}

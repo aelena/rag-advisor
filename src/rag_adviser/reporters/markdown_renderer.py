@@ -458,8 +458,15 @@ class MarkdownRenderer:
         return lines
 
     def _section_approach(self, recs: Recommendations) -> list[str]:
-        """Render the approach assessment section."""
-        if not recs.approach or recs.approach.proceed_with_rag:
+        """Render the approach assessment section.
+
+        Rendered unconditionally so the recommended approach and its
+        confidence are visible in every format (the machine YAML/JSON
+        always included this; the human reports used to hide it when
+        RAG was recommended, which is exactly the moment the reader
+        wants to see the confidence number).
+        """
+        if not recs.approach:
             return []
 
         a = recs.approach
@@ -469,16 +476,18 @@ class MarkdownRenderer:
             f"> **Recommended approach:** "
             f"{a.recommended_approach.value.replace('_', ' ').title()} "
             f"(confidence: {a.confidence:.0%})",
-            ">",
-            f"> {a.reasoning}",
-            "",
-            "### Alternative Approach",
-            "",
-            a.alternative_description,
-            "",
-            "---",
-            "",
         ]
+        if a.reasoning:
+            lines.extend([">", f"> {a.reasoning}"])
+        lines.append("")
+        if not a.proceed_with_rag and a.alternative_description:
+            lines.extend([
+                "### Alternative Approach",
+                "",
+                a.alternative_description,
+                "",
+            ])
+        lines.extend(["---", ""])
         return lines
 
     def _section_query_pipeline(self, recs: Recommendations) -> list[str]:

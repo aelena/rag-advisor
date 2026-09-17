@@ -64,6 +64,19 @@ class YamlRenderer:
                 "query_type": answers.query_type.value,
                 "query_complexity": answers.query_complexity.value,
                 "expected_answer_type": answers.expected_answer_type.value,
+                # Constraints and workload that used to be visible only in
+                # the Markdown/HTML reports. Keeping them here means the
+                # config is reproducible from the machine-readable output
+                # alone (previously "16 GB RAM / CPU only" was invisible).
+                "hardware": answers.constraints.hardware.value,
+                "ram_gb": answers.constraints.ram_gb,
+                "vram_gb": answers.constraints.vram_gb,
+                "budget": answers.constraints.budget.value,
+                "latency_budget": answers.constraints.latency_budget.value,
+                "update_frequency": answers.update_frequency.value,
+                "expected_queries_per_day": answers.expected_queries_per_day,
+                "has_ground_truth": answers.has_ground_truth,
+                "sample_queries": list(answers.sample_queries),
             },
         }
 
@@ -110,7 +123,10 @@ class YamlRenderer:
                     "embedding": m.embedding,
                     "chunking": m.chunking,
                     "pip_packages": m.pip_packages,
+                    # Notes and code_snippet used to live only in MD/HTML.
+                    "notes": m.notes,
                     "warnings": m.warnings,
+                    "code_snippet": m.code_snippet,
                 }
                 for m in recs.modalities
             ]
@@ -129,9 +145,30 @@ class YamlRenderer:
                 "trust_remote_code": top.trust_remote_code,
             }
             if len(recs.embedding_models) > 1:
+                # Full alternative records — model_id alone loses the
+                # decision evidence (quality score, size, reasons).
                 config["embedding"]["alternatives"] = [
-                    m.model_id for m in recs.embedding_models[1:]
+                    {
+                        "model_id": m.model_id,
+                        "provider": m.provider,
+                        "score": round(m.score, 3),
+                        "quality_score": m.quality_score,
+                        "dimension": m.dimension,
+                        "max_tokens": m.max_tokens,
+                        "estimated_size_gb": m.estimated_size_gb,
+                        "multilingual": m.multilingual,
+                        "reasons": list(m.reasons),
+                    }
+                    for m in recs.embedding_models[1:]
                 ]
+            # Preserve the top model's rationale in machine form so a
+            # downstream reader can see why it was picked.
+            top_reasons = list(getattr(top, "reasons", []) or [])
+            if top_reasons:
+                config["embedding"]["reasons"] = top_reasons
+            config["embedding"]["score"] = round(top.score, 3)
+            if top.quality_score:
+                config["embedding"]["quality_score"] = top.quality_score
 
         # Chunking
         if recs.chunking:
@@ -157,6 +194,9 @@ class YamlRenderer:
                 "library": db.library,
                 "supports_metadata_filter": db.supports_metadata_filter,
                 "supports_hybrid_search": db.supports_hybrid_search,
+                # Reason and capacity used to live only in the human report.
+                "reason": db.reason,
+                "estimated_capacity": db.estimated_capacity,
             }
 
         # Retrieval

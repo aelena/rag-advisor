@@ -4,6 +4,39 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.4] - 2026-09-17
+
+### Fixed
+- **Cross-format report drift.** The four output formats used to disagree
+  about what the recommendation actually was: the approach decision and
+  its confidence were hidden from Markdown and HTML whenever RAG was the
+  recommendation (invisible exactly when a reader wants to see it);
+  hardware, RAM, budget, latency budget and update frequency were absent
+  from the machine-readable YAML/JSON; the embedding-model alternatives
+  in YAML were bare model IDs with no scores or reasons; and the vector
+  DB reasoning did not survive the trip to the config file. All of these
+  are now present in every renderer.
+
+### Added
+- `Tokens to embed` row in the HTML estimates table (Markdown already
+  had it; the human formats now agree).
+- `metadata.hardware / ram_gb / vram_gb / budget / latency_budget /
+  update_frequency / expected_queries_per_day / has_ground_truth /
+  sample_queries` in `rag_config.yaml` and `rag_config.json`.
+- `embedding.score`, `embedding.quality_score`, `embedding.reasons` and
+  full alternative records (with `score`, `quality_score`, `dimension`,
+  `max_tokens`, `estimated_size_gb`, `multilingual`, `reasons`) in the
+  machine-readable config.
+- `vector_db.reason` and `vector_db.estimated_capacity` in the machine
+  config.
+- `modalities[].notes` and `modalities[].code_snippet` in the machine
+  config.
+- `tests/test_report_equivalence.py` — a cross-format semantic
+  equivalence suite that renders all four formats from the same
+  `Recommendations` object and asserts every load-bearing field appears
+  everywhere. When you add a new decision to the report, add it here so
+  the formats can never silently disagree again.
+
 ## [0.3.3] - 2026-09-16
 
 ### Fixed
