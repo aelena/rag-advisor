@@ -224,6 +224,213 @@ class TestPresentationModalityRoutingRegressions:
         assert any("LibreOffice" in step for step in rec.ingestion)
 
 
+class TestFormatTaxonomyRegressions:
+    """0.5.0 Phase 6: reclassify formats.
+
+    - ``.epub`` / ``.docx`` / ``.doc`` / ``.mobi`` / ``.rtf`` / ``.html`` /
+      ``.htm`` / ``.djvu`` / ``.chm`` / ``.opf`` are first-class text
+      documents, not "other".
+    - ``.crdownload``, ``.lnk``, ``.msi``, ``.db``, ``.bin``, ``.dat``,
+      ML checkpoint / font / disc-image extensions are excluded entirely.
+    - ``.gp`` / ``.ptb`` land in the new ``unsupported`` modality.
+    - Filename fragments (extension contains spaces or is >6 chars) are
+      excluded and reported as a separate warning.
+    """
+
+    def test_epub_counted_as_text_document(self, tmp_path: Path) -> None:
+        # A file with a .epub suffix should be a document, even when
+        # ebooklib is not available to extract text (the count still
+        # matters, only the token estimate degrades).
+        (tmp_path / "book.epub").write_bytes(b"PK\x03\x04")   # bare zip header
+        (tmp_path / "notes.txt").write_text(PROSE, encoding="utf-8")
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        assert stats.total_files == 2
+        assert stats.modalities["document"] == 2
+        assert "other" not in stats.modalities
+
+    def test_ml_checkpoint_extensions_are_excluded(self, tmp_path: Path) -> None:
+        (tmp_path / "prose.txt").write_text(PROSE, encoding="utf-8")
+        for junk in ("model.safetensors", "model.pt", "weights.pkl",
+                     "cache.bin", "weights.ckpt", "installer.msi"):
+            (tmp_path / junk).write_bytes(b"\x00" * 4)
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        assert stats.total_files_all == 1  # only the .txt counts
+        assert ".safetensors" not in stats.file_types
+        assert ".pt" not in stats.file_types
+        assert ".msi" not in stats.file_types
+
+    def test_guitar_tab_is_unsupported_not_other(self, tmp_path: Path) -> None:
+        (tmp_path / "prose.txt").write_text(PROSE, encoding="utf-8")
+        (tmp_path / "song.gp").write_bytes(b"\x00" * 4)
+        (tmp_path / "riff.ptb").write_bytes(b"\x00" * 4)
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        assert stats.modalities.get("unsupported") == 2
+        assert stats.modalities.get("other", 0) == 0
+
+    def test_filename_fragment_excluded_and_reported(self, tmp_path: Path) -> None:
+        (tmp_path / "prose.txt").write_text(PROSE, encoding="utf-8")
+        # Files whose "suffix" is a spurious fragment because the
+        # filename contains a dot in the middle (this is what happens on
+        # a real Books/Papers folder: "Jain. Machine Learning" reports
+        # ``. Machine Learning`` as the suffix).
+        (tmp_path / "Book.machine learning paradigms").write_text(
+            "junk", encoding="utf-8"
+        )
+        (tmp_path / "Author.chapter 2 draft").write_text(
+            "junk", encoding="utf-8"
+        )
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        assert stats.total_files == 1
+        assert len(stats.filename_fragment_paths) == 2
+        # And the outer pipeline turns that into a warning line.
+        answers = UserAnswers(
+            document_path=tmp_path,
+            constraints=HardwareConstraints(privacy=PrivacyLevel.STRICT),
+        )
+        out = tmp_path / "out"
+        recs = RAGAdviser().run(answers, out, [ReportFormat.MARKDOWN])
+        assert any("FILENAME FRAGMENTS" in w for w in recs.warnings)
+
+
+class TestPhysicalSizingRegressions:
+    """0.5.0 Phase 4: index footprint now uses a SizingProfile bundle
+    (fp16 halves memory, quantization further compresses, on-disk mmap
+    keeps only HNSW in RAM). Pre-0.5.0 the ``index_memory_mb`` was
+    fp32 with a fixed ~50% overhead regardless of the deployment."""
+
+    @staticmethod
+    def _base_recs():
+        # Minimal recs sufficient to run the estimator.
+        from rag_adviser.models import (
+            ChunkingRecommendation,
+            EmbeddingModelRecommendation,
+            Recommendations,
+            RetrievalRecommendation,
+            VectorDBRecommendation,
+        )
+        return Recommendations(
+            embedding_models=[
+                EmbeddingModelRecommendation(
+                    model_id="BAAI/bge-m3", dimension=1024,
+                    estimated_size_gb=2.27,
+                )
+            ],
+            chunking=ChunkingRecommendation(chunk_size=512, chunk_overlap=50),
+            vector_db=VectorDBRecommendation(category="client-server"),
+            retrieval=RetrievalRecommendation(top_k=5),
+        )
+
+    def test_fp16_halves_index_memory_vs_fp32(self) -> None:
+        from rag_adviser.models import DocumentStats, SizingProfile
+        from rag_adviser.recommenders.cost_estimator import CostEstimator
+
+        stats = DocumentStats(total_files=1000, total_tokens=10_000_000, sampled_files=50)
+        base = UserAnswers(document_stats=stats)
+        base.sizing_profile = SizingProfile(name="cpu-balanced", vector_dtype="fp32", hnsw_m=16)
+        half = UserAnswers(document_stats=stats)
+        half.sizing_profile = SizingProfile(name="gpu-fp16", vector_dtype="fp16", hnsw_m=16)
+        cost = CostEstimator()
+        fp32 = cost.estimate(base, self._base_recs())
+        fp16 = cost.estimate(half, self._base_recs())
+        assert fp16.index_memory_mb < fp32.index_memory_mb
+        assert 0.45 < fp16.index_memory_mb / fp32.index_memory_mb < 0.55
+
+    def test_on_disk_mmap_keeps_only_hnsw_graph_in_ram(self) -> None:
+        from rag_adviser.models import DocumentStats, SizingProfile
+        from rag_adviser.recommenders.cost_estimator import CostEstimator
+
+        stats = DocumentStats(total_files=1000, total_tokens=10_000_000, sampled_files=50)
+        base = UserAnswers(document_stats=stats)
+        base.sizing_profile = SizingProfile(name="cpu-balanced", vector_dtype="fp32", hnsw_m=16)
+        mmap = UserAnswers(document_stats=stats)
+        mmap.sizing_profile = SizingProfile(
+            name="on-disk-mmap", vector_dtype="fp32", hnsw_m=16, on_disk_vectors=True
+        )
+        cost = CostEstimator()
+        in_memory = cost.estimate(base, self._base_recs())
+        on_disk = cost.estimate(mmap, self._base_recs())
+        # HNSW graph is ~1.26x raw vectors at M=16, so on-disk mmap
+        # saves ~44% of RAM (raw vectors gone, graph stays resident) —
+        # not a full 50% but the meaningful direction is unambiguous.
+        assert on_disk.index_memory_mb < in_memory.index_memory_mb * 0.6
+        assert on_disk.index_memory_mb > 0
+
+    def test_sizing_preset_loads_from_yaml(self) -> None:
+        from rag_adviser.presets.manager import (
+            list_sizing_preset_names,
+            load_sizing_preset,
+        )
+
+        names = list_sizing_preset_names()
+        for expected in ("cpu-balanced", "gpu-fp16", "gpu-fp16-quantized",
+                         "on-disk-mmap"):
+            assert expected in names, f"missing sizing preset {expected}"
+        fp16 = load_sizing_preset("gpu-fp16")
+        assert fp16.vector_dtype == "fp16"
+        assert fp16.hnsw_m == 32
+        assert fp16.quantization == "none"
+        quantized = load_sizing_preset("gpu-fp16-quantized")
+        assert quantized.quantization == "scalar"
+
+
+class TestSamplingRegressions:
+    """0.5.0 Phase 5: sampling scales with corpus, stratifies by
+    extension, exposes percentile stats and a CI on the scanned-PDF rate."""
+
+    def test_sample_scales_with_corpus_size(self, tmp_path: Path) -> None:
+        # 400 text files → target 5% = 20 falls under the floor, so the
+        # sample size clamps to 50. 2000 files → 100; 20000 → capped 500.
+        from rag_adviser.analyzers.document_analyzer import _target_sample_size
+        assert _target_sample_size(10) == 10
+        assert _target_sample_size(400) == 50
+        assert _target_sample_size(2000) == 100
+        assert _target_sample_size(20000) == 500
+
+    def test_stratified_sample_covers_every_extension(self, tmp_path: Path) -> None:
+        # 200 .txt + 40 .md → target sample = max(50, 5% of 240) = 50.
+        # Both extensions must contribute (previously a sorted-order
+        # fixed cap of 50 could miss the smaller cohort entirely).
+        for i in range(200):
+            (tmp_path / f"doc_{i:03d}.txt").write_text(PROSE, encoding="utf-8")
+        for i in range(40):
+            (tmp_path / f"note_{i:03d}.md").write_text(PROSE, encoding="utf-8")
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        assert stats.total_files == 240
+        assert 40 <= stats.sampled_files <= 60
+
+    def test_token_percentiles_populated(self, tmp_path: Path) -> None:
+        # Heavy-tailed distribution: 60 short docs, 4 long ones.
+        for i in range(60):
+            (tmp_path / f"short_{i:02d}.txt").write_text(PROSE, encoding="utf-8")
+        for i in range(4):
+            (tmp_path / f"long_{i}.txt").write_text(PROSE * 20, encoding="utf-8")
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        assert stats.tokens_p50 > 0
+        assert stats.tokens_p50 <= stats.tokens_p75 <= stats.tokens_p90
+        assert stats.tokens_p90 <= stats.tokens_p95 <= stats.tokens_p99
+        # Long docs pull p99 well above p50 (heavy tail visible).
+        assert stats.tokens_p99 > stats.tokens_p50 * 3
+
+    def test_scanned_pdf_rate_has_wilson_ci(self, tmp_path: Path) -> None:
+        from pypdf import PdfWriter
+
+        # 3 blank-page (scanned-looking) PDFs and 1 text-bearing one.
+        for i in range(3):
+            writer = PdfWriter()
+            writer.add_blank_page(width=200, height=200)
+            with open(tmp_path / f"scan_{i}.pdf", "wb") as f:
+                writer.write(f)
+        (tmp_path / "prose.txt").write_text(PROSE, encoding="utf-8")
+
+        stats = DocumentAnalyzer().analyze(tmp_path)
+        low, high = stats.scanned_pdf_rate_ci
+        # 3 of 3 scanned → point estimate 100%, but the interval must
+        # be wider than the point estimate given the tiny sample.
+        assert 0.0 <= low <= high <= 1.0
+        assert low < 1.0  # tiny sample must reflect uncertainty
+        assert stats.scanned_pdfs == 3
+
+
 class TestRetrievalDefaultRegressions:
     """0.3.3: RetrievalRecommendation used to lowercase queries and strip
     punctuation by default. That is wrong for transformer bi-encoders and

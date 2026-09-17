@@ -19,6 +19,7 @@ from rag_adviser.models import (
     PrivacyLevel,
     QueryComplexity,
     QueryType,
+    SizingProfile,
     UpdateFrequency,
     UseCase,
     UserAnswers,
@@ -27,7 +28,47 @@ from rag_adviser.models import (
 logger = logging.getLogger(__name__)
 
 _BUILTIN_DIR = Path(__file__).parent / "builtin"
+_BUILTIN_SIZING_DIR = _BUILTIN_DIR / "sizing"
 _USER_DIR = Path.home() / ".ragadvisor" / "presets"
+_USER_SIZING_DIR = _USER_DIR / "sizing"
+
+
+def load_sizing_preset(name: str) -> SizingProfile:
+    """Load a physical-sizing preset by name.
+
+    Sizing presets live in ``builtin/sizing/*.yaml`` and (optionally)
+    ``~/.ragadvisor/presets/sizing/*.yaml``. See ``SizingProfile`` in
+    models.py for the rationale on why sizing lives in presets rather
+    than as individual CLI flags.
+    """
+    for directory in (_BUILTIN_SIZING_DIR, _USER_SIZING_DIR):
+        path = directory / f"{name}.yaml"
+        if path.exists():
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            sizing = data.get("sizing", {})
+            return SizingProfile(
+                name=data.get("name", path.stem),
+                description=data.get("description", ""),
+                vector_dtype=str(sizing.get("vector_dtype", "fp32")),
+                hnsw_m=int(sizing.get("hnsw_m", 16)),
+                hnsw_ef_construction=int(sizing.get("hnsw_ef_construction", 100)),
+                quantization=str(sizing.get("quantization", "none")),
+                on_disk_vectors=bool(sizing.get("on_disk_vectors", False)),
+            )
+    available = list_sizing_preset_names()
+    raise ValueError(
+        f"Sizing preset '{name}' not found. Available: "
+        f"{', '.join(available) or 'none'}"
+    )
+
+
+def list_sizing_preset_names() -> list[str]:
+    """Return names of all available sizing presets, built-in + custom."""
+    names: list[str] = []
+    for directory in (_BUILTIN_SIZING_DIR, _USER_SIZING_DIR):
+        if directory.exists():
+            names.extend(sorted(f.stem for f in directory.glob("*.yaml")))
+    return names
 
 
 @dataclass

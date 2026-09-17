@@ -1,0 +1,13 @@
+name: gpu-fp16
+description: |
+  GPU inference with half-precision vectors. Halves index RAM and disk
+  vs. fp32 with negligible recall loss on modern embedding models
+  (BGE, E5, GTE). Higher HNSW M=32 for better recall since GPU makes
+  the extra graph traversal cheap. No product/scalar quantization.
+
+sizing:
+  vector_dtype: fp16
+  hnsw_m: 32
+  hnsw_ef_construction: 200
+  quantization: none
+  on_disk_vectors: false

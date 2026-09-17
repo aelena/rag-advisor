@@ -1,0 +1,15 @@
+name: on-disk-mmap
+description: |
+  For corpora that exceed RAM. Vectors sit on disk and are paged in
+  via mmap; only the HNSW graph structure stays resident. Latency is
+  measurably higher (SSD IOPS dominate) but a 100M-vector index costs
+  ~10 GB RAM instead of 400 GB. Recommended for exploratory / batch
+  workloads on commodity hardware, not for interactive Q&A with a
+  sub-second latency budget.
+
+sizing:
+  vector_dtype: fp32
+  hnsw_m: 16
+  hnsw_ef_construction: 100
+  quantization: none
+  on_disk_vectors: true

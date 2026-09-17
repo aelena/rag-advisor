@@ -19,7 +19,10 @@ from rag_adviser.models import (
 )
 
 # Modalities that need treatment beyond the text pipeline, in display order.
-_ORDER = ["scanned_pdf", "image", "spreadsheet", "presentation", "video", "audio", "cad", "other"]
+_ORDER = [
+    "scanned_pdf", "image", "spreadsheet", "presentation",
+    "video", "audio", "cad", "unsupported", "other",
+]
 
 # Presentation formats python-pptx cannot open directly. Kept as a module
 # constant so both the recommender and its tests can import it.
@@ -307,6 +310,28 @@ class ModalityRecommender:
         )
 
     @staticmethod
+    def _unsupported(hosted: bool, gpu: bool, answers: UserAnswers) -> ModalityRecommendation:
+        return ModalityRecommendation(
+            strategy="Formats we recognise but have no text-extraction path for; convert or skip",
+            ingestion=[
+                "These extensions are domain-specific formats (music notation, "
+                "proprietary binaries, etc.) that no general text extractor can turn "
+                "into useful passages",
+                "For .gp / .ptb (guitar tab): convert with MuseScore or Guitar Pro to "
+                "MusicXML or plain text before indexing, or exclude them entirely",
+                "For anything else in this bucket: check whether a domain tool exists, "
+                "and if not, exclude the extension from your ingestion pipeline",
+            ],
+            tools_local=["MuseScore (guitar tab -> MusicXML / plain text)"],
+            tools_hosted=[],
+            embedding="n/a",
+            chunking="n/a",
+            pip_packages=[],
+            notes=["Counted in the corpus inventory but contribute no tokens to indexing"],
+            warnings=[],
+        )
+
+    @staticmethod
     def _other(hosted: bool, gpu: bool, answers: UserAnswers) -> ModalityRecommendation:
         return ModalityRecommendation(
             strategy="Unrecognised file types: decide per type whether to convert, skip or index metadata only",
@@ -329,6 +354,7 @@ _AUDIO = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma"}
 _SPREADSHEET = {".xlsx", ".xlsm", ".xls", ".ods", ".numbers"}
 _PRESENTATION = {".pptx", ".ppt", ".odp", ".key"}
 _CAD = {".dwg", ".dxf", ".dgn", ".ifc", ".rvt", ".step", ".stp", ".iges", ".igs", ".skp", ".3dm"}
+_UNSUPPORTED = {".gp", ".ptb"}
 
 
 def _modality_of_extension(ext: str) -> str:
@@ -345,6 +371,8 @@ def _modality_of_extension(ext: str) -> str:
         return "presentation"
     if ext in _CAD:
         return "cad"
+    if ext in _UNSUPPORTED:
+        return "unsupported"
     if ext == ".pdf":
         return "scanned_pdf"  # only used for extension listing of that pseudo-modality
     return "other"

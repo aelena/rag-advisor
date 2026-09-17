@@ -39,6 +39,18 @@ def run(
                  "With --no-interactive, other flags override the preset values.",
         ),
     ] = None,
+    sizing_preset: Annotated[
+        str | None,
+        typer.Option(
+            "--sizing-preset",
+            help="Physical-sizing bundle: cpu-balanced, gpu-fp16, gpu-fp16-quantized, "
+                 "on-disk-mmap. Coherent combinations of vector datatype, HNSW graph "
+                 "parameters, quantization and on-disk mode — see the preset YAMLs "
+                 "for the rationale. Preset-only by design (individual flags could "
+                 "produce nonsensical combinations); ship custom bundles in "
+                 "~/.ragadvisor/presets/sizing/.",
+        ),
+    ] = None,
     interactive: Annotated[
         bool,
         typer.Option("--interactive/--no-interactive", help="Interactive mode (default)"),
@@ -284,6 +296,24 @@ def run(
                         "comma-separated integers (tokens)"
                     )
                     raise typer.Exit(1) from None
+
+        # Load sizing preset. Sizing bundles are separate from use-case
+        # presets: they encode coherent physical-index settings (fp16
+        # + M=32 + int8 quantization etc.) that don't belong in the
+        # question flow. See models.SizingProfile for the rationale on
+        # preset-only sizing.
+        if sizing_preset:
+            from rag_adviser.presets.manager import load_sizing_preset
+
+            try:
+                answers.sizing_profile = load_sizing_preset(sizing_preset)
+                console.print(
+                    f"[bold green]Loaded sizing preset:[/] "
+                    f"{answers.sizing_profile.name}"
+                )
+            except ValueError as e:
+                console.print(f"[bold red]Error:[/] {e}")
+                raise typer.Exit(1) from e
 
         # Parse output format
         try:

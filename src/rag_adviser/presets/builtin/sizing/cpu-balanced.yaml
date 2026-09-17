@@ -1,0 +1,13 @@
+name: cpu-balanced
+description: |
+  CPU-friendly default. Full-precision (fp32) vectors in memory, HNSW
+  M=16 for good recall/build-time balance, no quantization. Use this
+  when you have RAM headroom and want the recommendation's index
+  size / RAM figures to match what you'll actually observe.
+
+sizing:
+  vector_dtype: fp32
+  hnsw_m: 16
+  hnsw_ef_construction: 100
+  quantization: none
+  on_disk_vectors: false

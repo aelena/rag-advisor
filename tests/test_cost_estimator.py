@@ -60,8 +60,10 @@ class TestEstimates:
         assert e.chunk_count == 1_000_000 // 462
         assert e.tokens_to_embed == e.chunk_count * 512
         assert e.corpus_tokens_estimated is True
-        # 768 dims x 4 bytes x 1.5 overhead ~= 4.6 KB per chunk -> ~10 MB
-        assert 8 < e.index_memory_mb < 12
+        # 768 dims x 4 bytes = 3 KB raw per chunk; HNSW M=16 adds
+        # ~1.26x on top of raw vectors (Phase-4 physical sizing model),
+        # so index_memory ≈ 3 KB × 2.26 × chunk_count -> ~14–16 MB.
+        assert 13 < e.index_memory_mb < 17
         assert e.index_size_mb > e.index_memory_mb
         assert e.indexing_cost_usd == 0.0
         assert e.indexing_time_min > 0

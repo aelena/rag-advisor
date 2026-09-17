@@ -65,7 +65,9 @@ class RAGAdviser:
             # Step 1b: Non-text modalities (images, video, spreadsheets, CAD, scans)
             stats = answers.document_stats
             if stats and (
-                any(k != "document" for k in stats.modalities) or stats.scanned_pdfs > 0
+                any(k != "document" for k in stats.modalities)
+                or stats.scanned_pdfs > 0
+                or stats.filename_fragment_paths
             ):
                 task = progress.add_task("Assessing non-text modalities...", total=None)
                 recommendations.modalities = ModalityRecommender().recommend(stats, answers)
@@ -82,9 +84,21 @@ class RAGAdviser:
                         f"see the Modalities section for the rest."
                     )
                 if stats.scanned_pdfs > 0:
+                    low, high = stats.scanned_pdf_rate_ci
                     recommendations.warnings.append(
                         f"SCANNED PDFs: {stats.scanned_pdfs} of {stats.sampled_pdfs} sampled "
-                        f"PDFs have no text layer and need OCR before indexing."
+                        f"PDFs have no text layer (95% CI {low:.0%}–{high:.0%}) and "
+                        f"need OCR before indexing."
+                    )
+                if stats.filename_fragment_paths:
+                    sample = ", ".join(
+                        f"'{p}'" for p in stats.filename_fragment_paths[:3]
+                    )
+                    recommendations.warnings.append(
+                        f"FILENAME FRAGMENTS: {len(stats.filename_fragment_paths)} "
+                        f"file(s) have a suffix that looks like a filename fragment, "
+                        f"not an extension (e.g. {sample}). These were excluded from "
+                        f"the inventory; rename them if they should be indexed."
                     )
                 progress.remove_task(task)
 

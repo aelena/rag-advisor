@@ -80,6 +80,20 @@ class YamlRenderer:
             },
         }
 
+        # Physical-sizing bundle used to compute the footprint. Recorded
+        # so the config file is a full record of the assumptions behind
+        # the numbers.
+        if answers.sizing_profile:
+            s = answers.sizing_profile
+            config["metadata"]["sizing_profile"] = {
+                "name": s.name,
+                "vector_dtype": s.vector_dtype,
+                "hnsw_m": s.hnsw_m,
+                "hnsw_ef_construction": s.hnsw_ef_construction,
+                "quantization": s.quantization,
+                "on_disk_vectors": s.on_disk_vectors,
+            }
+
         # Approach assessment
         if recs.approach:
             config["approach"] = {
@@ -107,6 +121,16 @@ class YamlRenderer:
                 "total_files_all_modalities": stats.total_files_all,
                 "modalities": dict(stats.modalities),
                 "scanned_pdfs_in_sample": stats.scanned_pdfs,
+                "scanned_pdf_rate_ci": list(stats.scanned_pdf_rate_ci),
+                "tokens_distribution": {
+                    "p50": stats.tokens_p50,
+                    "p75": stats.tokens_p75,
+                    "p90": stats.tokens_p90,
+                    "p95": stats.tokens_p95,
+                    "p99": stats.tokens_p99,
+                    "max": stats.max_tokens,
+                },
+                "filename_fragment_paths": list(stats.filename_fragment_paths),
             }
 
         # Non-text modalities

@@ -25,7 +25,8 @@ _CJK_RANGES = [
     (0x3400, 0x4DBF),   # CJK Unified Ideographs Extension A
 ]
 
-# File extensions we can extract text from
+# File extensions we can extract text from directly (plain-text / code /
+# lightweight structured formats).
 _TEXT_EXTENSIONS = {
     ".txt", ".md", ".rst", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
 }
@@ -36,7 +37,33 @@ _CODE_EXTENSIONS = {
 _TABULAR_EXTENSIONS = {".csv", ".tsv"}
 _PDF_EXTENSIONS = {".pdf"}
 _DOCX_EXTENSIONS = {".docx"}
-_DOC_EXTENSIONS = _TEXT_EXTENSIONS | _CODE_EXTENSIONS | _PDF_EXTENSIONS | _DOCX_EXTENSIONS
+
+# Rich text formats — first-class documents that need a format-specific
+# extractor. Files count as text documents even when the extractor
+# library is missing (they just contribute no tokens to the sample and
+# get a hint in the report). Bugs from putting these in "other":
+# EPUBs and MOBIs are ebooks, DOC/RTF are Word variants, HTML/CHM/DJVU
+# are common technical corpora, OPF is EPUB metadata.
+_TEXT_RICH_EXTENSIONS = {
+    ".epub", ".mobi",
+    ".doc", ".rtf",
+    ".html", ".htm",
+    ".djvu", ".djv",
+    ".chm",
+    ".opf",
+}
+_DOC_EXTENSIONS = (
+    _TEXT_EXTENSIONS
+    | _CODE_EXTENSIONS
+    | _PDF_EXTENSIONS
+    | _DOCX_EXTENSIONS
+    | _TEXT_RICH_EXTENSIONS
+)
+
+# Formats we recognise but cannot yet turn into text (binary music
+# notation etc.). Counted and reported so the user knows they exist
+# and can decide per-format whether to convert them.
+_UNSUPPORTED_EXTENSIONS = {".gp", ".ptb"}
 
 # Non-text modalities: counted and reported, never opened.
 _MODALITY_EXTENSIONS = {
@@ -48,17 +75,93 @@ _MODALITY_EXTENSIONS = {
     "cad": {
         ".dwg", ".dxf", ".dgn", ".ifc", ".rvt", ".step", ".stp", ".iges", ".igs", ".skp", ".3dm",
     },
+    "unsupported": _UNSUPPORTED_EXTENSIONS,
 }
-# Files nobody would want indexed: build artefacts, archives, binaries.
+# Files nobody would want indexed: build artefacts, archives, binaries,
+# system junk, ML checkpoints, fonts, installer/disc images.
 _IGNORED_EXTENSIONS = {
-    ".pyc", ".pyo", ".class", ".o", ".so", ".dll", ".exe", ".zip", ".tar", ".gz", ".7z",
-    ".rar", ".lock", ".log", ".tmp", ".bak", ".ds_store", ".ini", ".cfg", ".toml", ".env",
+    # Compiled binaries
+    ".pyc", ".pyo", ".class", ".o", ".so", ".dll", ".exe",
+    # Archives
+    ".zip", ".tar", ".gz", ".7z", ".rar",
+    # Build / runtime artefacts
+    ".lock", ".log", ".tmp", ".bak",
+    # OS / editor metadata
+    ".ds_store", ".ini", ".cfg", ".toml", ".env",
+    # System / temp — download partials, shortcuts, installers, DB files
+    ".crdownload", ".lnk", ".msi", ".db",
+    # Generic binary payloads
+    ".bin", ".dat",
+    # Disc images
+    ".iso", ".img", ".dmg",
+    # Serialised objects / ML checkpoints
+    ".pkl", ".pickle", ".npy", ".npz", ".pt", ".pth", ".safetensors", ".ckpt",
+    # Fonts
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
 }
 
-_MAX_SAMPLE_DOCS = 50
+# Anything that survives the taxonomy above but has a "suffix" that is
+# clearly not an extension. Windows filenames like
+# ``Foo & Bar - Machine Learning-Springer (2 files)``
+# report a suffix of ``. Springer (2 files)`` — treating that as an
+# extension leaks into the file_types map and creates false modalities.
+_MAX_EXTENSION_LEN = 6  # length not counting the leading dot
+
+
+def _looks_like_filename_fragment(ext: str) -> bool:
+    """Heuristic: is ``ext`` really an extension, or a filename fragment?"""
+    if not ext or not ext.startswith("."):
+        return False
+    body = ext[1:]
+    return bool(
+        " " in body
+        or len(body) > _MAX_EXTENSION_LEN
+        or ext.startswith("..")
+        or not body.isascii()
+    )
+
+# Sampling: opening every file in a 5000-file corpus is wasteful, but
+# the pre-0.5.0 fixed cap of 50 gave misleading confidence intervals on
+# any corpus larger than a few hundred files. We now sample 5% of the
+# document count with a floor of 50 (small corpora still get inspected)
+# and a ceiling of 500 (large corpora stay fast).
+_MIN_SAMPLE_DOCS = 50
+_MAX_SAMPLE_DOCS = 500
+_SAMPLE_SHARE = 0.05
+
 _MAX_CHARS_PER_DOC = 5000
 _MAX_PDF_PAGES = 20
 _MAX_READ_BYTES = 4_000_000  # never pull more than this from a single file
+
+
+def _target_sample_size(n_files: int) -> int:
+    """Number of files to sample from a corpus of ``n_files`` documents."""
+    if n_files <= _MIN_SAMPLE_DOCS:
+        return n_files
+    return max(_MIN_SAMPLE_DOCS, min(_MAX_SAMPLE_DOCS, int(n_files * _SAMPLE_SHARE)))
+
+
+def _percentile(sorted_values: list[float], q: float) -> float:
+    """Nearest-rank percentile on a pre-sorted list. ``q`` in ``[0, 1]``."""
+    if not sorted_values:
+        return 0.0
+    idx = min(len(sorted_values) - 1, max(0, int(round(q * (len(sorted_values) - 1)))))
+    return sorted_values[idx]
+
+
+def _wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson 95% score interval for a binomial proportion.
+
+    Preferred over the normal approximation for small samples with rates
+    near 0 or 1 — which is exactly the scanned-PDF regime (5 of 50).
+    """
+    if n <= 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + (z * z) / n
+    centre = (p + (z * z) / (2 * n)) / denom
+    spread = (z / denom) * ((p * (1 - p) / n + (z * z) / (4 * n * n)) ** 0.5)
+    return (max(0.0, centre - spread), min(1.0, centre + spread))
 
 # ── Content classification patterns ────────────────────────────────────────
 # Each pattern list is scored per document, then normalised per 1,000 chars so
@@ -136,9 +239,15 @@ class DocumentAnalyzer:
         files: list[Path] = []
         for file_path in all_files:
             ext = file_path.suffix.lower()
+            if _looks_like_filename_fragment(ext):
+                # Record the offending path once (capped so a corpus of
+                # 500 broken filenames does not blow up the report).
+                if len(stats.filename_fragment_paths) < 25:
+                    stats.filename_fragment_paths.append(str(file_path))
+                continue
             modality = self._modality_of(ext)
             if modality is None:
-                continue  # build artefacts, archives, config noise
+                continue  # build artefacts, archives, system junk, binaries
             stats.total_files_all += 1
             stats.modalities[modality] = stats.modalities.get(modality, 0) + 1
             stats.file_types[ext] = stats.file_types.get(ext, 0) + 1
@@ -153,9 +262,12 @@ class DocumentAnalyzer:
         if not files and stats.total_files_all == 0:
             raise DocumentAnalysisError(f"No supported documents found in: {corpus_path}")
 
-        # Sample evenly across the sorted file list so that one large
-        # sub-directory does not dominate the sample.
-        for file_path in self._sample(files, _MAX_SAMPLE_DOCS):
+        # Sample stratified by extension so a corpus of 5000 PDFs and
+        # 800 EPUBs contributes proportionally to the token estimate,
+        # rather than the sample being 99% whichever extension sorts
+        # first. Fixed 50-file caps hid this on heterogeneous corpora.
+        sample_target = _target_sample_size(len(files))
+        for file_path in self._stratified_sample(files, sample_target):
             is_pdf = file_path.suffix.lower() in _PDF_EXTENSIONS
             if is_pdf:
                 stats.sampled_pdfs += 1
@@ -198,8 +310,23 @@ class DocumentAnalyzer:
             stats.avg_tokens_per_doc = avg
             stats.max_tokens = int(max(token_estimates))
             stats.min_tokens = int(min(token_estimates))
+            # Distributional stats — corpora are heavy-tailed and the
+            # mean alone lies. The report can now say "median 800
+            # tokens, p99 60,000" and the reader spots the tail.
+            sorted_tokens = sorted(token_estimates)
+            stats.tokens_p50 = int(_percentile(sorted_tokens, 0.50))
+            stats.tokens_p75 = int(_percentile(sorted_tokens, 0.75))
+            stats.tokens_p90 = int(_percentile(sorted_tokens, 0.90))
+            stats.tokens_p95 = int(_percentile(sorted_tokens, 0.95))
+            stats.tokens_p99 = int(_percentile(sorted_tokens, 0.99))
             # Extrapolate from the sample to the whole corpus.
             stats.total_tokens = int(avg * stats.total_files)
+
+        # Wilson 95% CI on the scanned-PDF rate: a fixed "5 of 50 -> 10%"
+        # figure hides that the true rate could plausibly be anywhere
+        # between ~3% and ~22%. The interval belongs alongside the point
+        # estimate whenever the sample is small.
+        stats.scanned_pdf_rate_ci = _wilson_interval(stats.scanned_pdfs, stats.sampled_pdfs)
 
         if sentence_counts:
             stats.avg_sentences_per_doc = sum(sentence_counts) / len(sentence_counts)
@@ -228,7 +355,15 @@ class DocumentAnalyzer:
 
     @staticmethod
     def _modality_of(ext: str) -> str | None:
-        """Classify an extension: 'document', a non-text modality, 'other', or None to skip."""
+        """Classify an extension: 'document', a modality bucket, 'other', or None to skip.
+
+        Returns ``None`` when the file is a build artefact, system/temp
+        file, binary payload, or a filename fragment mistaken for an
+        extension — in every case the file is excluded from token
+        counts and from the file_types map entirely.
+        """
+        if _looks_like_filename_fragment(ext):
+            return None
         if ext in _DOC_EXTENSIONS:
             return "document"
         for modality, exts in _MODALITY_EXTENSIONS.items():
@@ -246,6 +381,54 @@ class DocumentAnalyzer:
         step = len(files) / limit
         return [files[int(i * step)] for i in range(limit)]
 
+    @classmethod
+    def _stratified_sample(cls, files: list[Path], target: int) -> list[Path]:
+        """Sample ``target`` files stratified proportionally by extension.
+
+        Groups files by their (lower-cased) suffix, then draws from each
+        group in proportion to that group's share of the corpus. Within
+        each group we pick evenly-spaced items so directory layout does
+        not bias the pick. Small groups always contribute at least one
+        file, which keeps rare formats visible in the token estimate.
+        """
+        if len(files) <= target:
+            return files
+        buckets: dict[str, list[Path]] = {}
+        for f in files:
+            buckets.setdefault(f.suffix.lower(), []).append(f)
+        total = len(files)
+        chosen: list[Path] = []
+        # First pass: allocate integer quotas proportional to share.
+        allocations: dict[str, int] = {}
+        for ext, group in buckets.items():
+            share = len(group) / total
+            allocations[ext] = max(1, int(share * target))
+        # Trim / grow the total allocation to match ``target``.
+        overflow = sum(allocations.values()) - target
+        if overflow > 0:
+            # Reduce the largest allocations first, but never below 1.
+            for ext in sorted(allocations, key=lambda e: -allocations[e]):
+                if overflow == 0:
+                    break
+                room = allocations[ext] - 1
+                if room > 0:
+                    trim = min(room, overflow)
+                    allocations[ext] -= trim
+                    overflow -= trim
+        elif overflow < 0:
+            # Give the extra picks to the largest groups.
+            for ext in sorted(allocations, key=lambda e: -len(buckets[e])):
+                if overflow == 0:
+                    break
+                headroom = len(buckets[ext]) - allocations[ext]
+                if headroom > 0:
+                    add = min(headroom, -overflow)
+                    allocations[ext] += add
+                    overflow += add
+        for ext, group in buckets.items():
+            chosen.extend(cls._sample(group, allocations[ext]))
+        return chosen
+
     # ── Text extraction ────────────────────────────────────────────────────
 
     def _extract_text(self, file_path: Path) -> tuple[str, float] | None:
@@ -253,17 +436,100 @@ class DocumentAnalyzer:
 
         Returns ``(text, scale)`` where ``scale`` >= 1.0 is how much larger the
         full document is than the returned text (e.g. a 60-page PDF read with a
-        20-page cap yields scale 3.0). ``None`` if the file could not be read.
+        20-page cap yields scale 3.0). ``None`` if the file could not be read
+        — including because an optional extractor library is missing. Callers
+        interpret ``None`` as "file counted but not sampled for tokens", so a
+        missing library degrades the token estimate rather than crashing.
         """
         ext = file_path.suffix.lower()
 
         if ext in _TEXT_EXTENSIONS | _CODE_EXTENSIONS:
             return self._read_text_file(file_path)
-        elif ext in _PDF_EXTENSIONS:
+        if ext in _PDF_EXTENSIONS:
             return self._read_pdf(file_path)
-        elif ext in _DOCX_EXTENSIONS:
+        if ext in _DOCX_EXTENSIONS:
             return self._read_docx(file_path)
+        if ext == ".epub":
+            return self._read_epub(file_path)
+        if ext in {".html", ".htm"}:
+            return self._read_html(file_path)
+        if ext == ".rtf":
+            return self._read_rtf(file_path)
+        if ext == ".opf":
+            # OPF is EPUB metadata — plain XML with textual descriptions.
+            return self._read_text_file(file_path)
+        # .doc / .mobi / .djvu / .djv / .chm need external tools
+        # (LibreOffice, calibre, DjVuLibre, chmlib). We count them as
+        # documents but don't sample tokens; the token estimate is
+        # extrapolated from the formats we did open.
         return None
+
+    def _read_epub(self, file_path: Path) -> tuple[str, float] | None:
+        """Extract text from an EPUB via ``ebooklib`` when available."""
+        try:
+            from ebooklib import ITEM_DOCUMENT, epub
+        except ImportError:
+            return None
+        try:
+            book = epub.read_epub(str(file_path))
+        except Exception:
+            return None
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            BeautifulSoup = None  # noqa: N806 — aliasing the class, not a variable
+        chunks: list[str] = []
+        total_chars = 0
+        for item in book.get_items_of_type(ITEM_DOCUMENT):
+            try:
+                content = item.get_content()
+            except Exception:
+                continue
+            if BeautifulSoup is not None:
+                try:
+                    text = BeautifulSoup(content, "html.parser").get_text(" ", strip=True)
+                except Exception:
+                    text = ""
+            else:
+                # Cheap fallback: strip HTML tags with a regex.
+                text = re.sub(r"<[^>]+>", " ", content.decode("utf-8", errors="replace"))
+            text = re.sub(r"\s+", " ", text).strip()
+            if not text:
+                continue
+            chunks.append(text)
+            total_chars += len(text)
+            if total_chars >= _MAX_READ_BYTES:
+                break
+        return ("\n\n".join(chunks), 1.0) if chunks else None
+
+    def _read_html(self, file_path: Path) -> tuple[str, float] | None:
+        """Extract text from a static HTML file."""
+        raw = self._read_text_file(file_path)
+        if raw is None:
+            return None
+        html, scale = raw
+        try:
+            from bs4 import BeautifulSoup
+            text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+        except ImportError:
+            text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
+        return (text, scale) if text else None
+
+    def _read_rtf(self, file_path: Path) -> tuple[str, float] | None:
+        """Extract text from an RTF file via ``striprtf`` when available."""
+        try:
+            from striprtf.striprtf import rtf_to_text
+        except ImportError:
+            return None
+        raw = self._read_text_file(file_path)
+        if raw is None:
+            return None
+        try:
+            text = rtf_to_text(raw[0])
+        except Exception:
+            return None
+        return (text.strip(), raw[1]) if text.strip() else None
 
     def _read_text_file(self, file_path: Path) -> tuple[str, float] | None:
         """Read a plain text file with encoding detection."""

@@ -1,0 +1,15 @@
+name: gpu-fp16-quantized
+description: |
+  Aggressive size reduction. fp16 vectors + int8 scalar quantization
+  packs the index into roughly a quarter of the fp32 footprint. HNSW
+  M=32 to counteract the recall loss from quantization; higher
+  ef_construction gives the graph more chances to find good neighbours
+  at index-build time. Validate recall against your own ground truth
+  before shipping — quantization is workload-dependent.
+
+sizing:
+  vector_dtype: fp16
+  hnsw_m: 32
+  hnsw_ef_construction: 400
+  quantization: scalar
+  on_disk_vectors: false

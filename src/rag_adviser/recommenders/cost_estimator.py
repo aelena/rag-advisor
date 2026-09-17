@@ -13,8 +13,11 @@ from rag_adviser.models import (
     HardwareProfile,
     LatencyBudget,
     Recommendations,
+    SizingProfile,
     UpdateFrequency,
     UserAnswers,
+    dtype_bytes,
+    hnsw_overhead_multiplier,
 )
 
 # ── Throughput / latency priors ────────────────────────────────────────────
@@ -36,10 +39,17 @@ _CLIENT_SERVER_HOP_MS = 10
 _MANAGED_HOP_MS = 40
 _BM25_MS = [(50_000, 5), (500_000, 20), (10**12, 60)]
 
-# Vector storage: fp32 dimension x 4 bytes, plus ~50% for HNSW graph and
-# metadata/text payload (~1 KB per chunk).
-_VECTOR_OVERHEAD = 1.5
+# Vector storage: raw vectors + HNSW graph overhead + payload. The
+# overhead used to be a fixed ~50% (fine for fp32 + M=16 in-memory),
+# but real deployments vary the datatype, HNSW graph degree, and
+# whether vectors live in RAM or on disk. Since 0.5.0 the estimator
+# uses the user's ``SizingProfile`` (default ``cpu-balanced``: fp32,
+# M=16, in-memory) to compute a workload-specific footprint.
 _PAYLOAD_BYTES_PER_CHUNK = 1024
+
+# Text-payload chunk metadata sits on disk regardless of vector mode
+# but is only paged into RAM on hits, so we don't count it against
+# ``index_memory_mb`` in mmap-on-disk configurations either.
 
 _UPDATES_PER_MONTH = {
     UpdateFrequency.NEVER: 0.0,
@@ -91,10 +101,43 @@ class CostEstimator:
         est.embedding_is_api = bool(top and top.provider != "huggingface")
 
         # ── Index footprint ────────────────────────────────────────────────
-        vector_bytes = est.chunk_count * dim * 4 * _VECTOR_OVERHEAD
+        # Use the sizing profile if provided; otherwise conservative
+        # defaults (fp32, M=16, in-memory) matching pre-0.5.0 behaviour.
+        sizing = answers.sizing_profile or SizingProfile()
+        # Effective bytes per stored vector scalar. Scalar/product
+        # quantization compresses the raw vectors to ~1 byte per
+        # dimension regardless of the source dtype.
+        if sizing.quantization in ("scalar", "product"):
+            effective_bytes = 1.0
+        else:
+            effective_bytes = dtype_bytes(sizing.vector_dtype)
+        raw_vector_bytes = est.chunk_count * dim * effective_bytes
+        hnsw_bytes = raw_vector_bytes * hnsw_overhead_multiplier(sizing.hnsw_m)
         payload_bytes = est.chunk_count * _PAYLOAD_BYTES_PER_CHUNK
-        est.index_size_mb = round((vector_bytes + payload_bytes) / 1_048_576, 1)
-        est.index_memory_mb = round(vector_bytes / 1_048_576, 1)
+
+        est.index_size_mb = round(
+            (raw_vector_bytes + hnsw_bytes + payload_bytes) / 1_048_576, 1
+        )
+        if sizing.on_disk_vectors:
+            # Only the HNSW graph resides in RAM when mmap is on; the
+            # raw vectors are paged from disk.
+            est.index_memory_mb = round(hnsw_bytes / 1_048_576, 1)
+            est.assumptions.append(
+                f"Sizing profile '{sizing.name}': mmap on-disk vectors, "
+                f"only HNSW graph in RAM"
+            )
+        else:
+            est.index_memory_mb = round(
+                (raw_vector_bytes + hnsw_bytes) / 1_048_576, 1
+            )
+        est.assumptions.append(
+            f"Sizing profile '{sizing.name}': {sizing.vector_dtype} vectors, "
+            f"HNSW M={sizing.hnsw_m}"
+            + (
+                f", {sizing.quantization} quantization"
+                if sizing.quantization != "none" else ""
+            )
+        )
         if recs.retrieval and recs.retrieval.hybrid_search:
             est.index_size_mb = round(est.index_size_mb + est.tokens_to_embed * 8 / 1_048_576, 1)
             est.assumptions.append("BM25 index adds ~8 bytes per token of postings")

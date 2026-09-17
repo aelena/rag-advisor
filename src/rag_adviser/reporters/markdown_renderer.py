@@ -129,6 +129,17 @@ class MarkdownRenderer:
             lines.append(f"- **CJK content:** {'Yes' if stats.has_cjk else 'No'}")
             lines.append(f"- **Content type:** {stats.detected_content_type.value}")
             lines.append(f"- **Avg tokens/doc:** {stats.avg_tokens_per_doc:.0f}")
+            if stats.tokens_p50:
+                lines.append(
+                    "- **Tokens/doc distribution:** "
+                    f"p50 {stats.tokens_p50:,} · "
+                    f"p75 {stats.tokens_p75:,} · "
+                    f"p90 {stats.tokens_p90:,} · "
+                    f"p95 {stats.tokens_p95:,} · "
+                    f"p99 {stats.tokens_p99:,} · "
+                    f"max {stats.max_tokens:,} — heavy tails mean the mean "
+                    "alone can be misleading"
+                )
 
             if stats.languages_detected:
                 lines.append("- **Languages detected:**")

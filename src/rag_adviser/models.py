@@ -185,6 +185,23 @@ class DocumentStats:
     # PDFs sampled that had no extractable text layer (scans needing OCR).
     sampled_pdfs: int = 0
     scanned_pdfs: int = 0
+    # Paths whose "extension" looks like a filename fragment (contains a
+    # space, is longer than 6 characters, or starts with a double-dot).
+    # Reported to the user so they can inspect the offending file names.
+    filename_fragment_paths: list[str] = field(default_factory=list)
+    # Distributional stats over the sampled documents. Corpora tend to
+    # be heavy-tailed, so the mean alone is misleading — a 700-page
+    # reference lives in the same "avg 115K tokens" bucket as 100 short
+    # articles. Populated only when at least one file was sampled.
+    tokens_p50: int = 0
+    tokens_p75: int = 0
+    tokens_p90: int = 0
+    tokens_p95: int = 0
+    tokens_p99: int = 0
+    # Wilson 95% score interval on the scanned-PDF rate given the small
+    # sample. Stored as ``(low, high)`` proportions in ``[0, 1]``; zero
+    # when no PDFs were sampled.
+    scanned_pdf_rate_ci: tuple[float, float] = (0.0, 0.0)
 
 
 @dataclass
@@ -238,6 +255,11 @@ class UserAnswers:
     validate_models: int = 1
     # Extra chunk sizes (tokens) to sweep during --validate; empty = recommended only.
     validate_chunk_sizes: list[int] = field(default_factory=list)
+
+    # Physical-sizing bundle selected via ``--sizing-preset``. When not
+    # set the cost estimator uses conservative defaults (fp32, M=16, no
+    # quantization, in-memory) that match the pre-0.5.0 assumptions.
+    sizing_profile: SizingProfile | None = None
 
 
 @dataclass
@@ -322,6 +344,60 @@ class RetrievalRecommendation:
     # legitimately need it (e.g. legacy BM25-only pipelines) can opt in.
     query_preprocessing: dict[str, bool] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SizingProfile:
+    """Physical-sizing knobs for the vector index and reranker stack.
+
+    These parameters interact — int8 quantization on a low-M HNSW graph
+    hurts recall differently from int8 on high-M, and mmap on-disk
+    vectors flip the RAM/disk trade-off entirely. Rather than expose
+    each knob as a CLI flag (Option A of the 0.5.0 design discussion),
+    we ship named bundles as ``.yaml`` presets that encode combinations
+    known to be coherent. Users pick the intent (``gpu-fp16-quantized``,
+    ``on-disk-mmap``) not the individual bits, and can version-track
+    their own bundles in a repo.
+
+    The rationale for preset-only sizing is captured in the CHANGELOG
+    entry for 0.5.0.
+    """
+
+    name: str = "cpu-balanced"
+    description: str = ""
+    # fp32 | fp16 | int8
+    vector_dtype: str = "fp32"
+    # HNSW graph degree; higher M -> better recall, more RAM
+    hnsw_m: int = 16
+    # HNSW build-time candidate list; higher -> better recall, slower index
+    hnsw_ef_construction: int = 100
+    # none | scalar | product
+    quantization: str = "none"
+    # True: page vectors from disk with mmap (RAM-cheap, latency-costly)
+    on_disk_vectors: bool = False
+
+
+# Bytes-per-scalar for each supported vector datatype. Product
+# quantization is treated as a coarse ~1 byte per PQ code by convention;
+# scalar quantization on int8 already lives at 1 byte per dimension.
+_DTYPE_BYTES = {"fp32": 4.0, "fp16": 2.0, "int8": 1.0}
+
+
+def dtype_bytes(dtype: str) -> float:
+    """Bytes per stored scalar for a vector datatype (``fp32``/``fp16``/``int8``)."""
+    return _DTYPE_BYTES.get(dtype.lower(), 4.0)
+
+
+def hnsw_overhead_multiplier(m: int) -> float:
+    """Approximate HNSW graph overhead as a fraction of raw vector bytes.
+
+    HNSW stores M neighbour links per node at the base layer plus a
+    smaller upper hierarchy. This is a coarse rule of thumb, not a
+    measurement — see the Qdrant capacity-planning docs for the real
+    formula. We use ``0.3 + 0.06 * M`` so a default M=16 adds ~130%
+    overhead on top of the raw vectors, and M=64 adds ~350%.
+    """
+    return 0.3 + 0.06 * max(m, 0)
 
 
 @dataclass

@@ -4,6 +4,98 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-09-17
+
+The physical-truth release: corpus estimates that actually reflect the
+corpus, footprint numbers that match the deployment, and a format
+taxonomy that stops silently dropping ~15% of a Books folder into a
+useless "other" bucket. Addresses phases 4, 5 and 6 of the 2026-09-16
+review remediation plan.
+
+### Added
+
+- **Physical sizing presets.** `--sizing-preset {cpu-balanced,
+  gpu-fp16, gpu-fp16-quantized, on-disk-mmap}` selects a coherent
+  bundle of vector datatype, HNSW graph parameters, quantization mode
+  and on-disk-vs-mmap mode. The cost estimator now uses these to
+  compute the physical footprint: fp16 halves index RAM vs. fp32, int8
+  scalar quantization compresses to ~1 byte per dimension, and mmap
+  mode keeps only the HNSW graph resident (~44% RAM saving at M=16).
+  Custom bundles live in `~/.ragadvisor/presets/sizing/*.yaml`.
+
+  **Why preset-only, not individual flags.** These knobs interact —
+  int8 on a low-M HNSW graph hurts recall differently from int8 on
+  high-M, and an mmap-on-disk deployment flips the entire RAM/disk
+  trade-off. Named bundles encode combinations known to be coherent
+  and let users version-track experiments in a repo. Individual
+  flags would trivially express bad combinations. Ship curated
+  presets first; expose overrides later if the demand appears.
+
+- **Rich text formats promoted to first-class documents.** `.epub`,
+  `.mobi`, `.doc`, `.docx`, `.rtf`, `.html` / `.htm`, `.djvu` / `.djv`,
+  `.chm`, `.opf` are extracted as text documents rather than dropped
+  into an unrecognised "other" bucket. Lazy imports keep the base
+  install lean; the optional `[formats]` extra pulls in `ebooklib`,
+  `beautifulsoup4` and `striprtf` for pure-Python extractors. Files
+  whose extractors aren't available are still counted; only their
+  token estimate degrades.
+
+- **Adaptive stratified sampling.** The fixed 50-file sample cap
+  regardless of corpus size (the source of "45 of 5,963 files opened"
+  on your Books scan) has been replaced with a sample that scales to
+  5% of the corpus, floored at 50 and capped at 500. Sampling is
+  stratified by file extension so a corpus of 5,000 PDFs and 800
+  EPUBs contributes proportionally to the token estimate.
+
+- **Distributional token stats.** The report now shows `p50 / p75 /
+  p90 / p95 / p99 / max` alongside the mean, so heavy tails are
+  visible instead of hiding inside "average 115K tokens/doc".
+
+- **Wilson 95% confidence interval on the scanned-PDF rate.** The
+  "5 of 50 sampled → 10%" figure becomes "10% (95% CI 3%–22%)" so
+  extrapolating to a 592-scanned-PDF total no longer looks precise.
+
+- **`unsupported` modality bucket** for formats we recognise but can't
+  turn into text (`.gp`, `.ptb` guitar tabs — expand as needed). The
+  recommender emits a short ingestion note ("convert with MuseScore
+  or exclude") instead of dumping these into `other`.
+
+- **Filename-fragment warnings.** Files like `Author.machine learning
+  paradigms` used to leak into `file_types` and create false
+  modalities. The analyzer now flags any suffix that contains a space,
+  is longer than 6 characters, or starts with a double-dot, excludes
+  them from the inventory, and lists the offending paths as a
+  `FILENAME FRAGMENTS` warning.
+
+### Changed
+
+- **Index footprint formula** upgraded from a fixed `dim × 4 × 1.5`
+  (fp32 vectors + fixed 50% overhead) to `raw_vectors_bytes +
+  hnsw_overhead(M) × raw_vectors_bytes + payload`, where HNSW
+  overhead scales with the graph degree (`0.3 + 0.06 × M`). Real
+  deployments show ~130% overhead at M=16, not 50% — the pre-0.5.0
+  RAM figures were optimistic. The two `test_cost_estimator` bounds
+  that pinned the old formula have been updated accordingly.
+
+- **Ignored extensions expanded** with `.crdownload`, `.lnk`, `.msi`,
+  `.db`, `.bin`, `.dat`, `.iso`, `.img`, `.dmg`, `.pkl`, `.pickle`,
+  `.npy`, `.npz`, `.pt`, `.pth`, `.safetensors`, `.ckpt`, `.woff`,
+  `.woff2`, `.ttf`, `.otf`, `.eot`. These were all landing in the
+  `other` bucket and inflating "N unrecognised files" counts. They
+  are now silently excluded from token totals and modality reports —
+  expect a small drop in the corpus-token estimate on existing users'
+  next run.
+
+### Migration
+
+- **`--sizing-preset` is optional.** Users who don't pass it get the
+  `cpu-balanced` defaults (fp32, M=16, no quantization, in-memory)
+  which match pre-0.5.0 assumptions. Existing scripts keep working.
+- **`[formats]` extra is optional.** `pip install "ragadvisor[formats]"`
+  when you have EPUB / MOBI / RTF corpora and want token estimates
+  that see through them. The base install continues to count these
+  files as documents; only the sampled token count degrades.
+
 ## [0.4.0] - 2026-09-17
 
 The epistemic shift promised in the 2026-09-16 review: rules with
