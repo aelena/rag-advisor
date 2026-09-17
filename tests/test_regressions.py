@@ -292,6 +292,38 @@ class TestFormatTaxonomyRegressions:
         assert any("FILENAME FRAGMENTS" in w for w in recs.warnings)
 
 
+class TestErrorCostRegressions:
+    """0.6.0 Phase 8: ``error_cost`` on UserAnswers flips retrieval's
+    precision / recall balance so a "wrong answer is worse than no
+    answer" scenario doesn't silently share defaults with "always
+    answer" scenarios (review §12)."""
+
+    def test_wrong_worse_tightens_threshold(self, tmp_path: Path) -> None:
+        from rag_adviser.models import ErrorCost
+        answers = UserAnswers(
+            use_case=UseCase.QA,
+            constraints=HardwareConstraints(privacy=PrivacyLevel.STRICT),
+            error_cost=ErrorCost.WRONG_WORSE,
+        )
+        recs = RAGAdviser().run(answers, tmp_path, [ReportFormat.YAML])
+        assert recs.retrieval.similarity_threshold >= 0.80
+        assert any("wrong_worse" in n for n in recs.retrieval.notes)
+
+    def test_no_answer_worse_drops_threshold_and_widens_topk(
+        self, tmp_path: Path
+    ) -> None:
+        from rag_adviser.models import ErrorCost
+        answers = UserAnswers(
+            use_case=UseCase.QA,
+            constraints=HardwareConstraints(privacy=PrivacyLevel.STRICT),
+            error_cost=ErrorCost.NO_ANSWER_WORSE,
+        )
+        recs = RAGAdviser().run(answers, tmp_path, [ReportFormat.YAML])
+        assert recs.retrieval.similarity_threshold == 0.0
+        assert recs.retrieval.top_k >= 8
+        assert any("no_answer_worse" in n for n in recs.retrieval.notes)
+
+
 class TestPhysicalSizingRegressions:
     """0.5.0 Phase 4: index footprint now uses a SizingProfile bundle
     (fp16 halves memory, quantization further compresses, on-disk mmap

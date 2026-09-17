@@ -445,6 +445,30 @@ class RAGAdviser:
                 "need to gather items from across the corpus"
             )
 
+        # ``error_cost`` from the questionnaire flips the precision /
+        # recall balance: an abstention-preferring app wants precision
+        # (tighter threshold, fewer candidates, low temperature) while
+        # a must-always-answer app wants recall (higher top_k, permissive
+        # threshold). Review §12 flagged this as a hidden default.
+        from rag_adviser.models import ErrorCost as _ErrorCost
+        if answers.error_cost == _ErrorCost.WRONG_WORSE:
+            rec.similarity_threshold = max(rec.similarity_threshold, 0.80)
+            rec.notes.append(
+                "error_cost=wrong_worse: threshold raised and abstention "
+                "encouraged. Add an 'answer only when at least one "
+                "retrieved chunk exceeds the threshold, otherwise say "
+                "you don't know' clause to the generation prompt."
+            )
+        elif answers.error_cost == _ErrorCost.NO_ANSWER_WORSE:
+            rec.similarity_threshold = 0.0  # let everything through
+            rec.top_k = max(rec.top_k, 8)
+            rec.notes.append(
+                "error_cost=no_answer_worse: similarity threshold dropped "
+                "to 0 and top_k widened. The system now always attempts "
+                "an answer even from weak candidates; accept some "
+                "hallucination risk in exchange for coverage."
+            )
+
         return rec
 
     def _generate_steps(

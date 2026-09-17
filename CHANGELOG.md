@@ -4,6 +4,59 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-09-17
+
+### Changed
+- **Approach decision is now a comparator, not a single winner.**
+  `ApproachAnalyzer.assess()` scores every applicable approach (RAG,
+  Direct Context, Long-Context LLM, Text-to-SQL, Structured
+  Extraction, Full-Text Search) and picks the highest-confidence one.
+  The top pick still lives on `recommended_approach` for
+  back-compatibility, but every candidate the tool considered is
+  exposed on `ApproachAssessment.candidates` and rendered as an
+  "Approaches considered" table in every output format. Downstream
+  candidates are load-bearing: they let a reader see that RAG at 0.85
+  beat Direct Context at 0.72 rather than "0.9 because the code
+  literal said so".
+  - The rule-specific confidences (previously 0.65 / 0.70 / 0.80 /
+    0.85 / 0.90 depending on the branch) have been rebalanced to sit
+    in a [0.86, 0.92] band that always beats "all RAG signals
+    matched" (now capped at 0.85), so a specific diagnostic rule
+    still wins when it fires without needing a first-match-wins fall-
+    through.
+
+### Added
+- **Two new questionnaire fields with load-bearing downstream effects:**
+  - `citation_granularity` (`document` / `page` / `span`) — declares
+    how precisely answers must cite their source. Rendered in the
+    user-input summary; ground-truth schema evolution to actually
+    consume this ships in a later release once vector-store metadata
+    is threaded through.
+  - `error_cost` (`wrong_worse` / `equal` / `no_answer_worse`) —
+    flips the precision/recall balance in retrieval defaults.
+    `wrong_worse` tightens `similarity_threshold` to 0.80 and adds
+    an abstention hint to the report; `no_answer_worse` drops the
+    threshold to 0 and widens `top_k` to at least 8.
+- **"Reading the report" section** in the README, covering the
+  epistemic conventions (heuristic starting points vs measurements,
+  what confidence bands mean, when to run `--validate`, how to
+  interpret the `~` prefix on extrapolated numbers, format
+  equivalence across MD/HTML/YAML/JSON).
+
+### Deferred
+- Passage-level ground-truth schema (`{query, document_id, page,
+  section, relevant_spans}`) with matching passage-aware Hit@K/MRR.
+  Adding the schema without the metric-side threading would be visual
+  clutter; adding the metric-side needs vector-store metadata plumbing
+  that belongs in its own release. Keep an eye on §11 of the 2026-09-16
+  review — this remains the single largest evaluation gap.
+- RAGAS / ARES faithfulness metrics (grounding, unsupported-assertion
+  rate, citation correctness) — a whole new evaluator. Same reason:
+  ships when it can ship coherently.
+- The other ~17 questionnaire fields the review's §12 enumerates.
+  Most only pay off when a downstream rule reads them; adding them
+  without those rules is just extra prompts.
+
 ## [0.5.0] - 2026-09-17
 
 The physical-truth release: corpus estimates that actually reflect the

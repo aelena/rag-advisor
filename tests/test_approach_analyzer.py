@@ -144,6 +144,66 @@ class TestApproachAnalyzer:
         assert result.recommended_approach != RecommendedApproach.TEXT_TO_SQL
 
 
+class TestApproachComparator:
+    """0.6.0 Phase 9: the analyzer returns a ranked list of every
+    candidate approach, not a single winner-take-all decision. The top
+    pick is still exposed via ``recommended_approach``, but
+    ``candidates`` shows the whole comparison so the reader can see what
+    else the tool considered."""
+
+    def setup_method(self) -> None:
+        self.analyzer = ApproachAnalyzer()
+
+    def test_default_case_still_wins_with_rag(self) -> None:
+        answers = UserAnswers()
+        answers.document_stats = DocumentStats(
+            total_files=100, total_tokens=500_000,
+            detected_content_type=ContentType.PROSE,
+        )
+        result = self.analyzer.assess(answers)
+        assert result.recommended_approach == RecommendedApproach.RAG
+        # Every considered candidate appears in the list.
+        assert result.candidates
+        assert result.candidates[0].approach == RecommendedApproach.RAG
+        # Candidates are sorted highest-first.
+        confidences = [c.confidence for c in result.candidates]
+        assert confidences == sorted(confidences, reverse=True)
+
+    def test_specific_rules_appear_in_candidates(self) -> None:
+        # Tabular + Q&A triggers Text-to-SQL as top pick, but the
+        # unfired RAG candidate is still listed so the reader sees the
+        # margin between them.
+        answers = UserAnswers()
+        answers.use_case = UseCase.QA
+        answers.content_type_override = ContentType.TABULAR
+        answers.document_stats = DocumentStats(
+            total_files=50, total_tokens=200_000,
+            detected_content_type=ContentType.TABULAR,
+        )
+        result = self.analyzer.assess(answers)
+        approaches = [c.approach for c in result.candidates]
+        assert RecommendedApproach.TEXT_TO_SQL in approaches
+        assert RecommendedApproach.RAG in approaches
+        # Top pick matches the recommendation.
+        assert result.recommended_approach == result.candidates[0].approach
+
+    def test_tiny_corpus_beats_rag(self) -> None:
+        # DIRECT_CONTEXT should out-score the RAG default when the
+        # corpus is small enough to fit in a single prompt.
+        answers = UserAnswers()
+        answers.document_stats = DocumentStats(
+            total_files=5, total_tokens=10_000,
+            detected_content_type=ContentType.PROSE,
+        )
+        result = self.analyzer.assess(answers)
+        assert result.recommended_approach == RecommendedApproach.DIRECT_CONTEXT
+        # RAG is still shown, but with a lower score.
+        rag_candidate = next(
+            c for c in result.candidates if c.approach == RecommendedApproach.RAG
+        )
+        assert rag_candidate.confidence < result.confidence
+
+
 class TestApproachConfidenceIsDerived:
     """0.4.0: the default RAG confidence used to be a hardcoded 0.9. It is
     now derived from how many typical RAG signals the input matches, so

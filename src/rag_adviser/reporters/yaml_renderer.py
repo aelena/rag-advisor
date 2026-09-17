@@ -64,6 +64,8 @@ class YamlRenderer:
                 "query_type": answers.query_type.value,
                 "query_complexity": answers.query_complexity.value,
                 "expected_answer_type": answers.expected_answer_type.value,
+                "citation_granularity": answers.citation_granularity.value,
+                "error_cost": answers.error_cost.value,
                 # Constraints and workload that used to be visible only in
                 # the Markdown/HTML reports. Keeping them here means the
                 # config is reproducible from the machine-readable output
@@ -102,6 +104,15 @@ class YamlRenderer:
                 "confidence": recs.approach.confidence,
                 "reasoning": recs.approach.reasoning,
                 "evidence": list(recs.approach.evidence),
+                "candidates": [
+                    {
+                        "approach": c.approach.value,
+                        "confidence": round(c.confidence, 3),
+                        "reasoning": c.reasoning,
+                        "evidence": list(c.evidence),
+                    }
+                    for c in recs.approach.candidates
+                ],
             }
             if not recs.approach.proceed_with_rag:
                 config["approach"]["alternative"] = recs.approach.alternative_description

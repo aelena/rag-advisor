@@ -112,6 +112,8 @@ class MarkdownRenderer:
         lines.append(f"- **Query type:** {answers.query_type.value}")
         lines.append(f"- **Query complexity:** {answers.query_complexity.value}")
         lines.append(f"- **Expected answer type:** {answers.expected_answer_type.value}")
+        lines.append(f"- **Citation granularity:** {answers.citation_granularity.value}")
+        lines.append(f"- **Error cost preference:** {answers.error_cost.value}")
         if answers.sample_queries:
             lines.append(f"- **Sample queries:** {'; '.join(answers.sample_queries)}")
         lines.append(f"- **Update frequency:** {answers.update_frequency.value}")
@@ -495,6 +497,23 @@ class MarkdownRenderer:
             lines.append("**Evidence:**")
             for e in a.evidence:
                 lines.append(f"- {e}")
+            lines.append("")
+        if len(a.candidates) > 1:
+            lines.append("### Approaches considered")
+            lines.append("")
+            lines.append(
+                "The tool scored every applicable approach and picked the "
+                "highest-confidence one. Alternatives are here so a shift in "
+                "corpus size, use case or query type doesn't quietly change "
+                "the recommendation behind your back."
+            )
+            lines.append("")
+            lines.append("| Approach | Confidence | Reasoning |")
+            lines.append("|----------|-----------:|-----------|")
+            for c in a.candidates:
+                marker = " (chosen)" if c.approach == a.recommended_approach else ""
+                name = c.approach.value.replace("_", " ").title()
+                lines.append(f"| {name}{marker} | {c.confidence:.0%} | {c.reasoning} |")
             lines.append("")
         if not a.proceed_with_rag and a.alternative_description:
             lines.extend([

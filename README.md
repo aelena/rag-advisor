@@ -4,7 +4,7 @@
 [![Python 3.10 | 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/ragadvisor?label=PyPI)](https://pypi.org/project/ragadvisor/)
-[![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-informational)](CHANGELOG.md)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
 [![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
@@ -15,6 +15,7 @@ RAG Advisor is a CLI tool that analyzes your document corpus, collects your infr
 
 ## Table of Contents
 
+- [Reading the report](#reading-the-report)
 - [How It Works](#how-it-works)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -36,6 +37,19 @@ RAG Advisor is a CLI tool that analyzes your document corpus, collects your infr
 - [Configuration](#configuration)
 - [Releasing](#releasing)
 - [Changelog](CHANGELOG.md)
+
+## Reading the report
+
+The generated `rag_report.md` / `.html` / `.yaml` / `.json` quartet reports one recommendation and a lot of surrounding evidence. A few conventions worth internalising before you scan the tables:
+
+- **Every scalar is a starting point, not a measurement.** `chunk_size = 512`, `top_k = 5`, `similarity_threshold = 0.75` and their siblings encode reasonable defaults for the profile you described. They are hypotheses to test with `--validate`, not conclusions. Numbers are pinned in the report so they can be compared across runs, not because the tool measured them on your data.
+- **Confidence figures are bands, not probabilities.** `Approach: RAG (confidence 85%)` means "five of five typical RAG signals matched"; it does not mean the tool ran an experiment. The `Approaches considered` table shows the runner-up so you can see how narrow the margin was — a shift in corpus size or use case may change which candidate wins.
+- **Estimates that come from a sample are marked with `~`.** A token total prefixed with `~` was extrapolated from an adaptive sample; the report says how many files were opened alongside a Wilson 95% CI on rates such as scanned-PDF share.
+- **The physical footprint depends on the sizing preset.** Index RAM and disk figures reflect the `--sizing-preset` you picked (or the `cpu-balanced` default). fp16 halves index RAM vs fp32; scalar quantization compresses further; `on-disk-mmap` keeps only the HNSW graph resident.
+- **The four output formats are semantically equivalent.** Anything you see in the Markdown report is present in the YAML/JSON config too. `rag_config.yaml` is the machine-readable hand-off — a downstream builder should only need that file.
+- **When something is fragile, the report says so.** Warnings are surfaced verbatim: reranker/language mismatches, multimodal share, filename fragments, corpus-token extrapolation from a small sample, non-commercial licences. Read them before you invest CPU-days indexing.
+
+Before shipping, run `ragadvisor run --validate --ground-truth-path queries.jsonl` on your own queries. The report is a starting point; validation is how you find out whether it was a good one for your workload.
 
 ## How It Works
 

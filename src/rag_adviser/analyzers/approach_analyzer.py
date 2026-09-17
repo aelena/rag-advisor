@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rag_adviser.models import (
     ApproachAssessment,
+    ApproachCandidate,
     ContentType,
     DocumentStats,
     RecommendedApproach,
@@ -31,31 +32,102 @@ class ApproachAnalyzer:
     def assess(self, answers: UserAnswers) -> ApproachAssessment:
         """Evaluate the user's scenario and recommend an approach.
 
-        Returns an ApproachAssessment. If proceed_with_rag is False, the tool
-        should present the alternative and optionally continue with RAG anyway.
+        Returns the highest-scored candidate as the ``ApproachAssessment``,
+        with every other candidate the tool considered attached to
+        ``candidates`` so the reader can see the whole comparison. This
+        is the "approach as first-class comparator" from review §2 —
+        the tool no longer decides on the first rule that matches; it
+        scores every applicable rule and picks the strongest.
         """
+        candidates = self.assess_all(answers)
+        top = candidates[0]
+        assessment = ApproachAssessment(
+            recommended_approach=top.approach,
+            confidence=top.confidence,
+            reasoning=top.reasoning,
+            evidence=list(top.evidence),
+            proceed_with_rag=(top.approach == RecommendedApproach.RAG),
+            candidates=candidates,
+        )
+        # Preserve back-compat: the pre-comparator branches populated
+        # ``alternative_description`` with a hand-written narrative. If
+        # a specific rule fired, restore that description via the same
+        # helper (idempotent — running the check again is cheap).
+        if not assessment.proceed_with_rag:
+            legacy = self._legacy_alternative_description(top.approach)
+            assessment.alternative_description = legacy
+        return assessment
+
+    def assess_all(self, answers: UserAnswers) -> list[ApproachCandidate]:
+        """Score every candidate approach and return them ranked."""
         stats = answers.document_stats
         use_case = answers.use_case
         content_type = self._effective_content_type(answers)
 
-        # Run checks in priority order — first match wins
-        checks = [
+        candidates: list[ApproachCandidate] = []
+        for check in (
             self._check_tabular_sql(content_type, use_case),
             self._check_tiny_corpus(stats),
             self._check_fits_context_window(stats, use_case),
             self._check_single_structured_doc(stats, content_type),
             self._check_keyword_search_sufficient(use_case, answers),
-        ]
+        ):
+            if check is not None:
+                candidates.append(
+                    ApproachCandidate(
+                        approach=check.recommended_approach,
+                        confidence=check.confidence,
+                        reasoning=check.reasoning,
+                        evidence=list(check.evidence),
+                    )
+                )
+        # RAG is always a candidate; its confidence is signal-derived so
+        # it competes with the specific rules honestly.
+        rag = self._default_rag_assessment(answers, content_type)
+        candidates.append(
+            ApproachCandidate(
+                approach=rag.recommended_approach,
+                confidence=rag.confidence,
+                reasoning=rag.reasoning,
+                evidence=list(rag.evidence),
+            )
+        )
+        candidates.sort(key=lambda c: c.confidence, reverse=True)
+        return candidates
 
-        for result in checks:
-            if result is not None:
-                return result
+    _LEGACY_ALT = {
+        RecommendedApproach.TEXT_TO_SQL: (
+            "Use an LLM to generate SQL or pandas queries against your structured data. "
+            "Libraries: LangChain SQLDatabaseChain, LlamaIndex NLSQLTableQueryEngine, "
+            "or Vanna.ai for Text-to-SQL."
+        ),
+        RecommendedApproach.DIRECT_CONTEXT: (
+            "Concatenate all documents and pass them directly to an LLM. "
+            "No chunking, no embeddings, no vector DB needed. Any current "
+            "long-context model (200K+ tokens) handles this; use prompt "
+            "caching so the corpus is not re-billed on every request."
+        ),
+        RecommendedApproach.LONG_CONTEXT_LLM: (
+            "Use a long-context LLM (200K-1M token windows are standard) "
+            "and pass the full corpus with prompt caching. For summarization, "
+            "this gives better coherence than retrieving and summarizing "
+            "individual chunks."
+        ),
+        RecommendedApproach.STRUCTURED_EXTRACTION: (
+            "Parse the document into its natural structure (sections, clauses, "
+            "headings) and query against that structure. Libraries: "
+            "docling, unstructured.io, or custom parsers. If the document "
+            "fits in context, you can also use a long-context LLM directly."
+        ),
+        RecommendedApproach.FULL_TEXT_SEARCH: (
+            "Use full-text search: Elasticsearch, OpenSearch, SQLite FTS5, "
+            "or Typesense. These handle keyword queries with proven ranking "
+            "algorithms (BM25/TF-IDF). Add semantic search later if needed."
+        ),
+    }
 
-        # Default: RAG. Confidence is derived from how many "typical RAG
-        # workload" signals the inputs actually match, so it degrades
-        # gracefully when the assessment is running with no corpus, an
-        # unusual content type, or a use case that only marginally fits.
-        return self._default_rag_assessment(answers, content_type)
+    def _legacy_alternative_description(self, approach: RecommendedApproach) -> str:
+        return self._LEGACY_ALT.get(approach, "")
 
     def _default_rag_assessment(
         self, answers: UserAnswers, content_type: ContentType
@@ -102,9 +174,13 @@ class ApproachAnalyzer:
                 else "No corpus analysed — assessment is based on user intent alone"
             )
 
-        # 0.5 is the floor: even a zero-signal RAG default is not a
-        # rejection, it just means the tool is running blind.
-        confidence = round(0.5 + 0.4 * (signals_matched / signals_total), 2)
+        # RAG confidence ranges [0.50, 0.85]. The 0.85 ceiling matters:
+        # specific-rule confidences (0.85–0.95) must always beat "all
+        # RAG signals matched" when they fire, otherwise the comparator
+        # regresses to first-match-wins semantics with extra steps.
+        # 0.5 floor: even a zero-signal RAG default is not a rejection,
+        # it just means the tool is running blind.
+        confidence = round(0.5 + 0.35 * (signals_matched / signals_total), 2)
         reasoning = (
             f"Your scenario matches {signals_matched}/{signals_total} typical RAG "
             "signals — starting point, not a measurement. Run `--validate` on "
@@ -136,7 +212,7 @@ class ApproachAnalyzer:
         ):
             return ApproachAssessment(
                 recommended_approach=RecommendedApproach.TEXT_TO_SQL,
-                confidence=0.85,
+                confidence=0.90,
                 reasoning=(
                     "Your corpus is tabular data and your use case involves querying it. "
                     "RAG over tables is fragile — embedding table rows loses structure. "
@@ -162,7 +238,7 @@ class ApproachAnalyzer:
         if stats.total_tokens < TINY_CORPUS_TOKENS and stats.total_files <= SMALL_CORPUS_FILES:
             return ApproachAssessment(
                 recommended_approach=RecommendedApproach.DIRECT_CONTEXT,
-                confidence=0.90,
+                confidence=0.92,
                 reasoning=(
                     f"Your corpus is very small ({stats.total_files} files, "
                     f"~{stats.total_tokens:,} tokens). It fits entirely in a single "
@@ -192,7 +268,7 @@ class ApproachAnalyzer:
         ):
             return ApproachAssessment(
                 recommended_approach=RecommendedApproach.LONG_CONTEXT_LLM,
-                confidence=0.80,
+                confidence=0.88,
                 reasoning=(
                     f"Your corpus (~{stats.total_tokens:,} tokens) fits within a long-context "
                     f"LLM's window, and your primary use case is summarization. "
@@ -223,7 +299,7 @@ class ApproachAnalyzer:
         ):
             return ApproachAssessment(
                 recommended_approach=RecommendedApproach.STRUCTURED_EXTRACTION,
-                confidence=0.70,
+                confidence=0.86,
                 reasoning=(
                     "You have a single structured document (legal/scientific). "
                     "Rather than chunking it for RAG, structured extraction "
@@ -252,7 +328,7 @@ class ApproachAnalyzer:
         ):
             return ApproachAssessment(
                 recommended_approach=RecommendedApproach.FULL_TEXT_SEARCH,
-                confidence=0.65,
+                confidence=0.86,
                 reasoning=(
                     "Your use case is search with short keyword queries. "
                     "Full-text search (BM25) is simpler, faster, and often more "

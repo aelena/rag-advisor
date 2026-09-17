@@ -34,6 +34,20 @@
 {% endfor %}
 </ul>
 {% endif %}
+{% if recommendations.approach.candidates and recommendations.approach.candidates|length > 1 %}
+<h3>Approaches considered</h3>
+<p>The tool scored every applicable approach and picked the highest-confidence one. Alternatives are here so a shift in corpus size, use case or query type doesn't quietly change the recommendation behind your back.</p>
+<table>
+    <tr><th>Approach</th><th>Confidence</th><th>Reasoning</th></tr>
+    {% for c in recommendations.approach.candidates %}
+    <tr>
+        <td>{{ c.approach.value.replace('_', ' ').title() }}{% if c.approach == recommendations.approach.recommended_approach %} <em>(chosen)</em>{% endif %}</td>
+        <td>{{ "%.0f"|format(c.confidence * 100) }}%</td>
+        <td>{{ c.reasoning }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
 {% if not recommendations.approach.proceed_with_rag and recommendations.approach.alternative_description %}
 <h3>Alternative Approach</h3>
 <p>{{ recommendations.approach.alternative_description }}</p>

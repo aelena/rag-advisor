@@ -122,6 +122,45 @@ class AnswerType(enum.Enum):
     LIST_ENUMERATION = "list_enumeration"
 
 
+class CitationGranularity(enum.Enum):
+    """How precisely answers must cite their source.
+
+    - ``document`` — good enough to name the file that contained the answer
+      (matches the pre-0.6.0 default ground-truth schema).
+    - ``page`` — the answer must point at a specific page/section; a
+      correct file with the wrong page still counts as a miss.
+    - ``span`` — the answer must quote the exact passage that supports it.
+
+    Drives the ground-truth loader's default schema and the evaluator's
+    hit / recall accounting (review §11).
+    """
+
+    DOCUMENT = "document"
+    PAGE = "page"
+    SPAN = "span"
+
+
+class ErrorCost(enum.Enum):
+    """Which failure mode hurts more: a wrong answer or no answer.
+
+    - ``wrong_worse`` — refusing to answer is preferable to a fabricated
+      one. Favour precision, low top_k, high similarity threshold, and
+      an abstention prompt.
+    - ``equal`` — no strong preference; tune both jointly.
+    - ``no_answer_worse`` — always producing an answer matters more
+      than being exactly right. Favour recall, higher top_k, permissive
+      similarity threshold.
+
+    Review §12: prevents the tool from silently picking a
+    precision-oriented default when the user needed a recall-oriented
+    one (or vice versa).
+    """
+
+    WRONG_WORSE = "wrong_worse"
+    EQUAL = "equal"
+    NO_ANSWER_WORSE = "no_answer_worse"
+
+
 class RecommendedApproach(enum.Enum):
     """The overall approach recommended for the user's scenario."""
 
@@ -243,6 +282,11 @@ class UserAnswers:
     update_frequency: UpdateFrequency = UpdateFrequency.NEVER
     has_ground_truth: bool = False
     ground_truth_path: Path | None = None
+    # Citation granularity + error cost drive retrieval defaults and
+    # the ground-truth schema. Defaults preserve pre-0.6.0 behaviour:
+    # document-level citations, no precision/recall preference.
+    citation_granularity: CitationGranularity = CitationGranularity.DOCUMENT
+    error_cost: ErrorCost = ErrorCost.EQUAL
     # Expected traffic; drives the monthly cost and capacity estimates.
     expected_queries_per_day: int = 1000
 
@@ -401,6 +445,24 @@ def hnsw_overhead_multiplier(m: int) -> float:
 
 
 @dataclass
+class ApproachCandidate:
+    """One candidate approach with its score and rationale.
+
+    Emitted by ``ApproachAnalyzer.assess_all()`` — the top pick appears
+    at index 0 as the recommendation, and every other candidate the
+    tool considered appears alongside so the reader can see *what else
+    was on the table* rather than trusting a single winner-take-all
+    decision. This addresses review §2 (approach comparator instead of
+    single confidence).
+    """
+
+    approach: RecommendedApproach = RecommendedApproach.RAG
+    confidence: float = 0.0
+    reasoning: str = ""
+    evidence: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ApproachAssessment:
     """Assessment of whether RAG is the right approach.
 
@@ -409,6 +471,11 @@ class ApproachAssessment:
     approach. ``evidence`` lists the concrete facts that triggered the
     decision so a reader can inspect the reasoning rather than trusting
     a single number.
+
+    ``candidates`` (added in 0.6.0) enumerates every approach the tool
+    scored, sorted highest-first. The winner sits at ``candidates[0]``
+    and matches the top-level fields; downstream candidates document
+    why the tool would have picked something else if a signal changed.
     """
 
     recommended_approach: RecommendedApproach = RecommendedApproach.RAG
@@ -417,6 +484,7 @@ class ApproachAssessment:
     alternative_description: str = ""
     proceed_with_rag: bool = True
     evidence: list[str] = field(default_factory=list)
+    candidates: list[ApproachCandidate] = field(default_factory=list)
 
 
 @dataclass
