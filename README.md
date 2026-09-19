@@ -9,6 +9,22 @@
 [![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
 [![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
 
+---
+
+```plaintext
+
+██████   █████   ██████   █████  ██████  ██    ██ ██ ███████  ██████  ██████  
+██   ██ ██   ██ ██       ██   ██ ██   ██ ██    ██ ██ ██      ██    ██ ██   ██ 
+██████  ███████ ██   ███ ███████ ██   ██ ██    ██ ██ ███████ ██    ██ ██████  
+██   ██ ██   ██ ██    ██ ██   ██ ██   ██  ██  ██  ██      ██ ██    ██ ██   ██ 
+██   ██ ██   ██  ██████  ██   ██ ██████    ████   ██ ███████  ██████  ██   ██ 
+                                                                              
+                                                                              
+```
+
+---
+
+
 **Rule-based recommendations for building Retrieval-Augmented Generation systems.**
 
 RAG Advisor analyses your document corpus, collects your infrastructure constraints, and generates a complete RAG configuration — embedding model, chunking strategy, vector database, retrieval settings and physical sizing — tailored to your exact requirements. Ships as three consumption surfaces:
