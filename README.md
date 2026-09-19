@@ -4,14 +4,20 @@
 [![Python 3.10 | 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/ragadvisor?label=PyPI)](https://pypi.org/project/ragadvisor/)
-[![Version](https://img.shields.io/badge/version-0.6.1-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.2-informational)](CHANGELOG.md)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Typer](https://img.shields.io/badge/CLI-Typer-009485?logo=fastapi&logoColor=white)](https://typer.tiangolo.com/)
 [![Works offline](https://img.shields.io/badge/works-offline-8A2BE2)](#external-api-integration)
 
 **Rule-based recommendations for building Retrieval-Augmented Generation systems.**
 
-RAG Advisor is a CLI tool that analyzes your document corpus, collects your infrastructure constraints, and generates a complete RAG configuration — embedding model, chunking strategy, vector database, and retrieval settings — tailored to your exact requirements. Informed defaults, measurable hypotheses, targeted experiments: the recommendation is a starting point, and `--validate` measures whether it actually works on your queries before you commit to indexing.
+RAG Advisor analyses your document corpus, collects your infrastructure constraints, and generates a complete RAG configuration — embedding model, chunking strategy, vector database, retrieval settings and physical sizing — tailored to your exact requirements. Ships as three consumption surfaces:
+
+- **CLI** — `ragadvisor …` (`pip install ragadvisor`).
+- **Claude Code skill** — `/rag-advisor <folder>` inside Claude Code; drives the CLI, collects constraints from your prompt, and explains the report.
+- **Python library** — `from rag_adviser import RAGAdviser, UserAnswers, …`; plain-dataclass inputs and outputs, no framework lock-in.
+
+Informed defaults, measurable hypotheses, targeted experiments: the recommendation is a starting point, and `--validate` measures whether it actually works on your queries before you commit to indexing.
 
 ## Table of Contents
 
@@ -19,12 +25,13 @@ RAG Advisor is a CLI tool that analyzes your document corpus, collects your infr
 - [How It Works](#how-it-works)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Claude Code Skill](#claude-code-skill)
+- [Python API](#python-api)
 - [Profile Presets](#profile-presets)
 - [Cost, Footprint & Latency Estimates](#cost-footprint--latency-estimates)
 - [Multimodal Corpora](#multimodal-corpora)
-- [Use It From Claude Code](#use-it-from-claude-code)
 - [Validate Before You Build](#validate-before-you-build)
-- [LLM Verification](#llm-verification)
+- [BYOK LLM Integration](#byok-llm-integration)
 - [Evaluation Pipeline](#evaluation-pipeline)
 - [Research Assistant](#research-assistant)
 - [CLI Reference](#cli-reference)
@@ -177,6 +184,148 @@ The schema mirrors the questionnaire in three sections: `document_discovery` (co
 ragadvisor analyze ./my_documents
 ```
 
+## Claude Code Skill
+
+The repository ships a project skill at `.claude/skills/rag-advisor/SKILL.md`. With this repo open in Claude Code, invoke it as `/rag-advisor <folder> [constraints]`. The skill runs `analyze` on the folder, maps your stated constraints ("must stay on-prem", "chatbot over docs", "fast", …) to CLI flags, runs the adviser, reads the generated Markdown report and explains the verdict, warnings and stack in plain language — then offers `--validate` when you have ground-truth queries.
+
+### Example invocations
+
+```
+/rag-advisor ./docs
+/rag-advisor ~/Corpora/handbooks "must stay on-prem, fast responses"
+/rag-advisor ./contracts "legal analysis, privacy strict, GPU 16 GB"
+/rag-advisor ./corpus "chatbot over docs" --validate ./queries.jsonl
+```
+
+The skill handles the constraint → flag mapping (see `.claude/skills/rag-advisor/SKILL.md` for the full table), asks only for details that would actually change the recommendation, and warns loudly when the recommendation is fragile (scanned PDFs, multilingual reranker mismatch, RAM budget breached, filename fragments, low content-type confidence).
+
+Nothing leaves your machine: the skill invokes the local CLI. The `--use-llm` step is opt-in and uses your key, exactly as it does at the CLI (see [BYOK LLM Integration](#byok-llm-integration)).
+
+## Python API
+
+RAG Advisor is a library first and a CLI on top. Every load-bearing type is re-exported from the top of the package so you can drive the recommender from a notebook, a test suite, or another tool:
+
+```python
+from pathlib import Path
+
+from rag_adviser import (
+    RAGAdviser,
+    UserAnswers, HardwareConstraints,
+    UseCase, LatencyBudget, HardwareProfile, PrivacyLevel,
+    ReportFormat,
+    Recommendations,
+)
+
+answers = UserAnswers(
+    document_path=Path("./my-corpus"),
+    use_case=UseCase.QA,
+    constraints=HardwareConstraints(
+        hardware=HardwareProfile.CPU_ONLY,
+        ram_gb=32,
+        latency_budget=LatencyBudget.MODERATE,
+        privacy=PrivacyLevel.STRICT,
+    ),
+)
+
+recs: Recommendations = RAGAdviser().run(
+    answers,
+    output_dir=Path("./out"),
+    formats=[ReportFormat.MARKDOWN, ReportFormat.YAML],
+)
+
+# recs is a plain dataclass — inspect it programmatically
+top_model = recs.embedding_models[0]
+print(f"embedding: {top_model.model_id} (dim={top_model.dimension})")
+print(f"chunks: {recs.estimates.chunk_count:,}")
+print(f"index RAM: {recs.estimates.index_memory_mb:.0f} MB")
+for w in recs.warnings:
+    print(f"! {w}")
+```
+
+Every field is a plain Python value (str / int / float / list / dict / enum / dataclass) — serialise with `dataclasses.asdict`, diff in tests, feed into another tool.
+
+### What's in `Recommendations`
+
+The returned `Recommendations` object holds the entire result tree:
+
+| Attribute | Type | Contents |
+|---|---|---|
+| `approach` | `ApproachAssessment` | Top pick + ranked `candidates` (RAG vs Direct-Context vs Long-Context vs Text-to-SQL vs …) with evidence |
+| `embedding_models` | `list[EmbeddingModelRecommendation]` | Top pick at index 0, alternatives with scores and reasons |
+| `chunking` | `ChunkingRecommendation` | Strategy, size, overlap, language overrides, code snippet |
+| `vector_db` | `VectorDBRecommendation` | Provider, category, library, reason |
+| `retrieval` | `RetrievalRecommendation` | top_k, threshold, hybrid, rerank, calibration_target, abstention_policy |
+| `reranker` | `RerankerRecommendation` | Picked model, coherence warnings, alternatives |
+| `query_transformation` | `QueryTransformationRecommendation` | HyDE / step-back / multi-query with per-technique latency |
+| `modalities` | `list[ModalityRecommendation]` | Per-modality ingestion advice (scanned PDF, image, audio, video, …) |
+| `estimates` | `CostEstimate` | Chunks, index size, RAM, indexing time, retrieval-latency scenarios |
+| `validation` | `ValidationResult \| None` | Populated when `run_validation=True` |
+| `llm_verification` | `LLMVerification \| None` | Populated when `use_llm_verification=True` |
+| `warnings` | `list[str]` | CRITICAL / LATENCY / FILENAME FRAGMENTS / SCANNED PDFs / etc. |
+| `implementation_steps` | `list[str]` | The Implementation Checklist rendered in the report |
+
+### Composing sub-recommenders
+
+You don't have to run the full pipeline — every stage is usable in isolation:
+
+```python
+from pathlib import Path
+
+from rag_adviser.analyzers.document_analyzer import DocumentAnalyzer
+from rag_adviser.analyzers.approach_analyzer import ApproachAnalyzer
+from rag_adviser.recommenders.model_finder import HFModelFinder
+from rag_adviser.recommenders.cost_estimator import CostEstimator
+from rag_adviser.presets.manager import load_sizing_preset
+
+# 1. Analyse the corpus in isolation
+stats = DocumentAnalyzer().analyze(Path("./my-corpus"))
+print(f"{stats.total_files:,} text docs, ~{stats.total_tokens:,} tokens")
+print(f"p50={stats.tokens_p50:,}, p99={stats.tokens_p99:,}")
+
+# 2. Ask the approach analyser what it would recommend
+from rag_adviser import HardwareConstraints, UseCase, UserAnswers
+answers = UserAnswers(document_stats=stats, use_case=UseCase.QA,
+                     constraints=HardwareConstraints())
+decision = ApproachAnalyzer().assess(answers)
+for c in decision.candidates:
+    print(f"  {c.approach.value:20s} {c.confidence:.0%}  {c.reasoning}")
+
+# 3. Just find embedding models — offline mode skips the HF Hub call
+models = HFModelFinder(offline=True).find_models(
+    doc_stats=stats, constraints=answers.constraints, use_case=UseCase.QA,
+)
+print(models[0].model_id)
+
+# 4. Load a sizing preset by name for use elsewhere
+sizing = load_sizing_preset("gpu-fp16-quantized")
+```
+
+### Using it from tests
+
+Because everything is dataclass-in / dataclass-out, RAG Advisor is easy to test-double:
+
+```python
+def test_our_pipeline_matches_advisor_recommendation():
+    recs = RAGAdviser().run(
+        UserAnswers(
+            document_path=Path("./fixtures/corpus"),
+            use_case=UseCase.QA,
+        ),
+        output_dir=Path("./out"),
+        formats=[ReportFormat.YAML],
+    )
+    assert recs.embedding_models[0].model_id.startswith("BAAI/bge")
+    assert recs.chunking.chunk_size == 512
+    assert not any(w.startswith("CRITICAL:") for w in recs.warnings)
+```
+
+### Stable-vs-internal boundary
+
+- **Stable** — everything in `rag_adviser.__all__`. Renames go through a deprecation cycle.
+- **Internal** — anything imported from a sub-module (`rag_adviser.recommenders.model_finder.HFModelFinder`, etc.). Usable, but expect signature changes without a semver bump.
+
+If you find yourself relying on an internal name, open an issue — we'll consider promoting it.
+
 ## Profile Presets
 
 Presets are pre-configured profiles for common RAG scenarios. They pre-fill the questionnaire so you can get started quickly.
@@ -224,10 +373,6 @@ Real corpora are rarely text only. The analyzer inventories every file it finds 
 
 Hosted services are only proposed when privacy and budget allow; otherwise they are listed for reference and the plan stays local. When 30% or more of the files are not text, the report leads with a multimodal warning because the text pipeline covers only part of the corpus.
 
-## Use It From Claude Code
-
-The repository ships a project skill at `.claude/skills/rag-advisor/SKILL.md`. With this repo open in Claude Code, `/rag-advisor <folder>` runs `analyze`, maps your stated constraints to flags, runs the adviser, reads the generated report and explains the verdict, warnings and stack in plain language, offering `--validate` when you have ground-truth queries.
-
 ## Validate Before You Build
 
 `--validate` closes the loop between advice and measurement. It takes the recommended chunking strategy, chunk size, embedding model and top-k, runs them through the evaluation pipeline on **your** corpus and **your** queries, and attaches the retrieval metrics to the report with a verdict and concrete next steps.
@@ -257,30 +402,127 @@ ragadvisor run --no-interactive -d ./docs --ground-truth-path ./queries.syntheti
 
 `bootstrap-queries` samples passages evenly across the corpus and asks the LLM to write one specific question and short answer per passage. Only the sampled passages are sent to the API. Every entry is marked `"synthetic": true`, and the validator and evaluation report say so, because LLM-written questions are easier than real user questions and tend to overstate retrieval quality. Use them to get the loop running, then replace them with real questions as they come in. `--dry-run` shows the sampled passages without any API call.
 
-## LLM Verification
+## BYOK LLM Integration
 
-The `--use-llm` flag sends your rule-based recommendations to an LLM for expert review. The LLM assesses each recommendation, notes agreements, suggests refinements, and flags additional considerations.
+RAG Advisor's core recommendation pipeline is **local-first**: it runs to completion with no API keys, no telemetry, no phone-home. LLM calls are strictly **opt-in** — you enable them per-command, using **your own API key** from your own environment. The tool never stores your key, never uploads your documents unless you explicitly ask it to via the one subcommand that does, and works fully offline for every other feature.
+
+### The three opt-in LLM features
+
+| Feature | CLI flag | What is sent | What data leaves your machine |
+|---|---|---|---|
+| **Recommendation verification** | `ragadvisor run --use-llm` | The generated recommendation (embedding model, chunking, retrieval, sizing, warnings) | **Recommendations only — never your documents.** Corpus stats (counts, sizes, language mix) are included so the LLM can reason about scale. |
+| **Research assistant synthesis** | `ragadvisor ask --use-llm "..."` | Your question + top-K passages from **the bundled research knowledge base**, not your corpus | Your question text and passages from RAG Advisor's own shipped research notes. |
+| **Ground-truth bootstrap** | `ragadvisor bootstrap-queries CORPUS` | **Sampled passages from your corpus**, one at a time, asking the LLM to write a question for each | Your document text (sampled evenly). This is the only path that sends your corpus content — the subcommand is separate and explicit. |
+
+Everything else (analyze, run without `--use-llm`, evaluate, validate, presets, HuggingFace embedding-model catalogue refresh) is local-only.
+
+### Configuring your key
+
+RAG Advisor auto-detects the first available key from environment variables:
 
 ```bash
-# Set your API key
+# Anthropic (checked first, preferred)
 export ANTHROPIC_API_KEY=sk-ant-...
-# or
+
+# OpenAI (fallback if no Anthropic key)
 export OPENAI_API_KEY=sk-...
 
-# Run with LLM verification
-ragadvisor run --use-llm
+# Neither set? Recommendation still runs; --use-llm features print
+# "LLM not available" and continue with the rest of the report.
 ```
 
-**Supported providers:** Anthropic (preferred) and OpenAI. The tool auto-detects which API key is available.
+The env vars are read once when `--use-llm` or `bootstrap-queries` runs. Nothing writes them to disk.
 
-**Environment variables:**
-- `ANTHROPIC_API_KEY` — Anthropic API key (checked first)
-- `OPENAI_API_KEY` — OpenAI API key (fallback)
-- `RAGADVISOR_LLM_MODEL` — Override the default model (defaults: `claude-opus-5` for Anthropic, `gpt-4o-mini` for OpenAI)
-- `OPENAI_BASE_URL` — Custom OpenAI-compatible endpoint (Ollama, vLLM, Azure, ...)
-- `ANTHROPIC_BASE_URL` — Custom Anthropic-compatible endpoint (proxies, gateways)
+### Model, endpoint and provider overrides
 
-The LLM verification section appears in all report formats (Markdown, HTML, YAML) and in the terminal summary.
+Everything is overridable via env vars — no config file to edit.
+
+```bash
+# Pick a specific model
+export RAGADVISOR_LLM_MODEL=claude-opus-4-7        # Anthropic
+export RAGADVISOR_LLM_MODEL=gpt-4o-mini            # OpenAI
+
+# Route through a proxy, gateway or self-hosted endpoint
+export ANTHROPIC_BASE_URL=https://your-proxy.example.com
+export OPENAI_BASE_URL=https://your-litellm.example.com/v1
+
+# Common OpenAI-compatible endpoints work as-is
+export OPENAI_BASE_URL=http://localhost:11434/v1   # Ollama
+export OPENAI_BASE_URL=https://your-azure-openai.openai.azure.com/openai/deployments/<name>
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+export OPENAI_API_KEY=<the-endpoint's-key>
+```
+
+Environment variable reference:
+
+- `ANTHROPIC_API_KEY` — Anthropic key (checked first)
+- `OPENAI_API_KEY` — OpenAI or OpenAI-compatible key (fallback)
+- `RAGADVISOR_LLM_MODEL` — override the default model
+- `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` — override the API endpoint
+- `HF_HUB_OFFLINE=1` — skip the HuggingFace Hub call at model-discovery time (falls back to the curated model catalogue)
+
+### End-to-end examples
+
+**1) Recommendation with a second opinion from Claude:**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+ragadvisor run -d ./my-corpus --use-case question_answering --use-llm
+```
+
+The `LLMVerification` section appears in every rendered format (Markdown, HTML, YAML, JSON). The LLM sees the recommendation table, not your documents.
+
+**2) Recommendation without any LLM call (default):**
+
+```bash
+# No env vars needed. Nothing leaves your machine.
+ragadvisor run -d ./my-corpus --use-case question_answering
+```
+
+**3) Ask a research question against the bundled knowledge base:**
+
+```bash
+# Retrieval-only (default) — no LLM required
+ragadvisor ask "when should I use HyDE?"
+
+# LLM synthesis — uses your key to write a coherent answer
+export ANTHROPIC_API_KEY=sk-ant-...
+ragadvisor ask --use-llm "when should I use HyDE?"
+```
+
+**4) Generate synthetic ground-truth queries from your corpus** *(this one sends corpus passages — use only if the corpus can leave your machine):*
+
+```bash
+export OPENAI_API_KEY=sk-...
+ragadvisor bootstrap-queries ./my-corpus --output ./queries.jsonl
+
+# Dry-run — shows the passages that would be sent, without any API calls
+ragadvisor bootstrap-queries ./my-corpus --dry-run
+```
+
+**5) Route Claude through a local Ollama server (no cloud call at all):**
+
+```bash
+export OPENAI_API_KEY=ollama
+export OPENAI_BASE_URL=http://localhost:11434/v1
+export RAGADVISOR_LLM_MODEL=llama3.1
+ragadvisor run -d ./my-corpus --use-llm
+```
+
+### Privacy interactions
+
+RAG Advisor also prunes recommendations based on your `--privacy` setting, independent of BYOK:
+
+- `--privacy strict` or `--privacy air_gapped` removes hosted embedding APIs (OpenAI, Cohere, Voyage) from the candidate pool and marks any `hosted` modality tools as reference-only.
+- With `--privacy strict`, `--use-llm` still works — it's your key, your choice — but the surrounding recommendation is built assuming nothing else leaves your machine.
+- `ragadvisor bootstrap-queries` refuses to run silently on a strict-privacy setup; you have to opt in explicitly by re-running without `--privacy strict`.
+
+### What the LLM never sees
+
+- Your document contents (unless you explicitly run `bootstrap-queries`).
+- File paths, filenames or directory layout.
+- Any credentials other than the one API key you set in your own environment.
+- Persistent state across runs (each `--use-llm` invocation is stateless).
 
 ## Evaluation Pipeline
 
@@ -476,7 +718,7 @@ Exports the bundled example corpus (14 research notes on RAG) and 40 hand-writte
 | `--chunk-chars N` | | Passage size shown to the LLM (default: 1200) |
 | `--dry-run` | | Show sampled passages only, no LLM calls |
 
-Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; see [LLM Verification](#llm-verification) for model overrides.
+Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; see [BYOK LLM Integration](#byok-llm-integration) for model overrides.
 
 ### `ragadvisor refresh-catalogue [--write]`
 

@@ -4,6 +4,58 @@ All notable changes to RAG Advisor. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-09-19
+
+Positioning + documentation release. The recommender has been a
+CLI + skill + library for a while, but the README and package
+top-level pretended it was CLI-only. This release makes the Python
+API a first-class contract and documents both the skill and the
+library alongside the CLI.
+
+### Added
+- **Public Python API.** `rag_adviser/__init__.py` now defines
+  `__all__` and re-exports the load-bearing types (`RAGAdviser`,
+  `UserAnswers`, `HardwareConstraints`, `SizingProfile`,
+  `Recommendations`, the enums for use case / hardware / latency /
+  privacy / budget / query type / query complexity / answer type /
+  citation granularity / error cost / update frequency / content
+  type / deployment target / report format / recommended approach,
+  the `Recommendations` sub-dataclasses, and the error hierarchy).
+  A downstream caller can now write `from rag_adviser import
+  RAGAdviser, UserAnswers, UseCase` without knowing the sub-module
+  layout.
+- **`tests/test_public_api.py`** — an import smoke test that walks
+  `__all__` and asserts every name resolves, plus an end-to-end
+  recommendation using only top-level imports. If a rename drops a
+  symbol from the public surface, this fails so the docs and code
+  stay in sync.
+- **README "Claude Code Skill" section** — moved and expanded from
+  the old "Use It From Claude Code" one-paragraph note. Shows the
+  `/rag-advisor <folder> [constraints]` invocation, a handful of
+  representative examples, and points at the SKILL.md for the full
+  constraint-to-flag mapping. Notes the skill inherits the BYOK
+  privacy semantics from the CLI.
+- **README "Python API" section** — covers the import pattern, a
+  full end-to-end example, a table of every attribute on
+  `Recommendations`, sub-recommender composition (`DocumentAnalyzer`,
+  `ApproachAnalyzer`, `HFModelFinder`, `CostEstimator`,
+  `load_sizing_preset`), a "using it from tests" snippet, and an
+  explicit stable-vs-internal boundary statement (top-level =
+  stable, sub-modules = internal, use at own risk).
+
+### Changed
+- **Tagline / positioning.** Was "RAG Advisor is a CLI tool that
+  analyzes …". Now framed as three consumption surfaces: CLI,
+  Claude Code skill, Python library. Matches reality and matches
+  what the follow-up reviewer noticed.
+
+### Notes
+- No behaviour change. This is a documentation + surface release —
+  the recommender itself, sizing model, format taxonomy, cost
+  estimator, presets, tests are unchanged from 0.6.1. Existing
+  callers of the sub-module imports keep working (nothing was
+  moved), and the CLI is unchanged.
+
 ## [0.6.1] - 2026-09-17
 
 Follow-up review of 0.6.0 (`_memoria/rag_advisor_followup_review_v060.md`)
